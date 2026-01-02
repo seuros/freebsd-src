@@ -1,0 +1,390 @@
+#
+# GENERIC -- Generic kernel configuration file for FreeBSD/amd64
+#
+# For more information on this file, please read the config(5) manual page,
+# and/or the handbook section on Kernel Configuration Files:
+#
+#    https://docs.freebsd.org/en/books/handbook/kernelconfig/#kernelconfig-config
+#
+# The handbook is also available locally in /usr/share/doc/handbook
+# if you've installed the doc distribution, otherwise always see the
+# FreeBSD World Wide Web server (https://www.FreeBSD.org/) for the
+# latest information.
+#
+# An exhaustive list of options and more detailed explanations of the
+# device lines is also present in the ../../conf/NOTES and NOTES files.
+# If you are in doubt as to the purpose or necessity of a line, check first
+# in NOTES.
+#
+
+cpu		HAMMER
+ident		CUSTOM
+
+makeoptions	DEBUG=-g		# Build kernel with gdb(1) debug symbols
+makeoptions	WITH_CTF=1		# Run ctfconvert(1) for DTrace support
+
+options 	SCHED_ULE		# ULE scheduler
+#DISABLED: options 	NUMA			# Non-Uniform Memory Architecture support (single socket)
+options 	PREEMPTION		# Enable kernel thread preemption
+options 	EXTERR_STRINGS
+options 	VIMAGE			# Subsystem virtualization, e.g. VNET
+options 	INET			# InterNETworking
+#DISABLED: options 	INET6			# IPv6 communications protocols
+options 	IPSEC_SUPPORT		# Allow kldload of ipsec and tcpmd5
+options 	IPSEC_OFFLOAD		# Inline ipsec offload infra
+options 	ROUTE_MPATH		# Multipath routing support
+options 	FIB_ALGO		# Modular fib lookups
+options 	TCP_OFFLOAD		# TCP offload
+options 	TCP_BLACKBOX		# Enhanced TCP event logging
+options 	TCP_HHOOK		# hhook(9) framework for TCP
+options 	TCP_RFC7413		# TCP Fast Open
+#DISABLED: options 	SCTP_SUPPORT		# Allow kldload of SCTP (rarely used protocol)
+options 	KERN_TLS		# TLS transmit & receive offload
+options 	FFS			# Berkeley Fast Filesystem
+options 	SOFTUPDATES		# Enable FFS soft updates support
+options 	UFS_ACL			# Support for access control lists
+options 	UFS_DIRHASH		# Improve performance on big directories
+options 	UFS_GJOURNAL		# Enable gjournal-based UFS journaling
+#DISABLED: options 	QUOTA			# Enable disk quotas for UFS (not needed on router)
+#DISABLED: options 	MD_ROOT			# MD is a potential root device (boot from SATA)
+options 	NFSCL			# Network Filesystem Client
+options 	NFSD			# Network Filesystem Server
+options 	NFSLOCKD		# Network Lock Manager
+options 	NFS_ROOT		# NFS usable as /, requires NFSCL
+options 	MSDOSFS			# MSDOS Filesystem
+options 	CD9660			# ISO 9660 Filesystem
+#DISABLED: options 	PROCFS			# Process filesystem (Linux compat, rarely needed)
+options 	PSEUDOFS		# Pseudo-filesystem framework
+options 	TMPFS			# Efficient memory filesystem
+options 	GEOM_RAID		# Soft RAID functionality.
+options 	GEOM_LABEL		# Provides labelization
+options 	EFIRT			# EFI Runtime Services support
+options 	COMPAT_FREEBSD32	# Compatible with i386 binaries
+options 	COMPAT_FREEBSD4		# Compatible with FreeBSD4
+options 	COMPAT_FREEBSD5		# Compatible with FreeBSD5
+options 	COMPAT_FREEBSD6		# Compatible with FreeBSD6
+options 	COMPAT_FREEBSD7		# Compatible with FreeBSD7
+options 	COMPAT_FREEBSD9		# Compatible with FreeBSD9
+options 	COMPAT_FREEBSD10	# Compatible with FreeBSD10
+options 	COMPAT_FREEBSD11	# Compatible with FreeBSD11
+options 	COMPAT_FREEBSD12	# Compatible with FreeBSD12
+options 	COMPAT_FREEBSD13	# Compatible with FreeBSD13
+options 	COMPAT_FREEBSD14	# Compatible with FreeBSD14
+#DISABLED: options 	SCSI_DELAY=5000		# Delay (in ms) before probing SCSI (no SCSI)
+options 	KTRACE			# ktrace(1) support
+options 	STACK			# stack(9) support
+options 	SYSVSHM			# SYSV-style shared memory
+options 	SYSVMSG			# SYSV-style message queues
+options 	SYSVSEM			# SYSV-style semaphores
+options 	_KPOSIX_PRIORITY_SCHEDULING # POSIX P1003_1B real-time extensions
+options 	PRINTF_BUFR_SIZE=128	# Prevent printf output being interspersed.
+options 	KBD_INSTALL_CDEV	# install a CDEV entry in /dev
+#DISABLED: options 	HWPMC_HOOKS		# Necessary kernel hooks for hwpmc(4) (perf profiling)
+options 	AUDIT			# Security event auditing
+options 	CAPABILITY_MODE		# Capsicum capability mode
+options 	CAPABILITIES		# Capsicum capabilities
+options 	MAC			# TrustedBSD MAC Framework
+options 	KDTRACE_FRAME		# Ensure frames are compiled in
+options 	KDTRACE_HOOKS		# Kernel DTrace hooks
+options 	DDB_CTF			# Kernel ELF linker loads CTF data
+options 	INCLUDE_CONFIG_FILE	# Include this file in kernel
+#DISABLED: options 	RACCT			# Resource accounting framework (not needed)
+#DISABLED: options 	RACCT_DEFAULT_TO_DISABLED # Set kern.racct.enable=0 by default
+#DISABLED: options 	RCTL			# Resource limits (not needed)
+
+# Debugging support.  Always need this:
+options 	KDB			# Enable kernel debugger support.
+options 	KDB_TRACE		# Print a stack trace for a panic.
+
+# Kernel dump features.
+options 	EKCD			# Support for encrypted kernel dumps
+options 	GZIO			# gzip-compressed kernel and user dumps
+options 	ZSTDIO			# zstd-compressed kernel and user dumps
+options 	DEBUGNET		# debugnet networking
+options 	NETDUMP			# netdump(4) client support
+options 	NETGDB			# netgdb(4) client support
+
+# Make an SMP-capable kernel by default
+options 	SMP			# Symmetric MultiProcessor Kernel
+
+# CPU frequency control
+device		cpufreq
+
+# Bus support.
+device		acpi
+device		smbios
+#DISABLED: options 	IOMMU			# Not needed for bare metal
+device		pci
+#DISABLED: options 	PCI_HP			# PCI-Express native HotPlug (no hotplug)
+#DISABLED: options 	PCI_IOV			# PCI SR-IOV support (no virtualization)
+
+#DISABLED: options 	COMPAT_LINUXKPI		# Linux kernel API compatibility (no Linux drivers)
+
+# Enable support for the kernel PLL to use an external PPS signal,
+# under supervision of [x]ntpd(8)
+# More info in ntpd documentation: http://www.eecis.udel.edu/~ntp
+
+#DISABLED: options 	PPS_SYNC		# Precision time sync (no GPS/PPS hardware)
+
+# Floppy drives
+#DISABLED: device		fdc
+
+# ATA controllers
+device		ahci			# AHCI-compatible SATA controllers
+#DISABLED: device		ata			# Legacy ATA/SATA controllers (not needed with AHCI)
+#DISABLED: device		mvs			# Marvell 88SX50XX/88SX60XX/88SX70XX/SoC SATA
+#DISABLED: device		siis			# SiliconImage SiI3124/SiI3132/SiI3531 SATA
+
+# SCSI Controllers - DISABLED (no SCSI hardware)
+#DISABLED: device		ahc			# AHA2940 and onboard AIC7xxx devices
+#DISABLED: device		ahd			# AHA39320/29320 and onboard AIC79xx devices
+#DISABLED: device		hptiop			# Highpoint RocketRaid 3xxx series
+#DISABLED: device		isp			# Qlogic family
+#device		ispfw			# Firmware for QLogic HBAs- normally a module
+#DISABLED: device		mpt			# LSI-Logic MPT-Fusion
+#DISABLED: device		mps			# LSI-Logic MPT-Fusion 2
+#DISABLED: device		mpr			# LSI-Logic MPT-Fusion 3
+#DISABLED: device		mpi3mr			# LSI-Logic MPT-Fusion 4
+#DISABLED: device		sym			# NCR/Symbios Logic
+#DISABLED: device		isci			# Intel C600 SAS controller
+#DISABLED: device		ocs_fc			# Emulex FC adapters
+#DISABLED: device		pvscsi			# VMware PVSCSI
+
+# ATA/SCSI peripherals
+device		scbus			# SCSI bus (required for ATA/SCSI)
+#DISABLED: device		ch			# SCSI media changers
+device		da			# Direct Access (disks)
+#DISABLED: device		sa			# Sequential Access (tape etc)
+#DISABLED: device		cd			# CD
+device		pass			# Passthrough device (direct ATA/SCSI access)
+#DISABLED: device		ses			# Enclosure Services (SES and SAF-TE)
+#device		ctl			# CAM Target Layer
+
+# RAID controllers interfaced to the SCSI subsystem - DISABLED (no RAID hardware)
+#DISABLED: device		arcmsr			# Areca SATA II RAID
+#DISABLED: device		ciss			# Compaq Smart RAID 5*
+#DISABLED: device		ips			# IBM (Adaptec) ServeRAID
+#DISABLED: device		smartpqi		# Microsemi smartpqi driver
+#DISABLED: device		tws			# LSI 3ware 9750 SATA+SAS 6Gb/s RAID controller
+
+# RAID controllers - DISABLED (no RAID hardware)
+#DISABLED: device		aac			# Adaptec FSA RAID
+#DISABLED: device		aacp			# SCSI passthrough for aac (requires CAM)
+#DISABLED: device		aacraid			# Adaptec by PMC RAID
+#DISABLED: device		ida			# Compaq Smart RAID
+#DISABLED: device		mfi			# LSI MegaRAID SAS
+#DISABLED: device		mlx			# Mylex DAC960 family
+#DISABLED: device		mrsas			# LSI/Avago MegaRAID SAS/SATA, 6Gb/s and 12Gb/s
+#XXX pointer/int warnings
+#device		pst			# Promise Supertrak SX6000
+
+# NVM Express (NVMe) support - DISABLED (using SATA only)
+#DISABLED: device		nvme			# base NVMe driver
+#DISABLED: device		nvd			# expose NVMe namespaces as disks, depends on nvme
+
+# Universal Flash Storage Host Controller Interface support - DISABLED (not used)
+#DISABLED: device 		ufshci			# UFS host controller
+
+# Intel Volume Management Device (VMD) support - DISABLED (not used)
+#DISABLED: device		vmd
+
+# atkbdc0 controls both the keyboard and the PS/2 mouse
+device		atkbdc			# AT keyboard controller
+device		atkbd			# AT keyboard
+device		psm			# PS/2 mouse
+
+device		kbdmux			# keyboard multiplexer
+
+# syscons is the legacy console driver, resembling an SCO console - DISABLED (using vt)
+device		vga			# VGA video card driver
+#DISABLED: device		splash			# Splash screen and screen saver support (not needed)
+#DISABLED: device		sc			# Legacy syscons (redundant with vt)
+#DISABLED: options 	SC_PIXEL_MODE		# add support for the raster text mode
+
+# vt is the default video console driver
+device		vt
+device		vt_vga
+device		vt_efifb
+device		vt_vbefb
+
+#DISABLED: device		agp			# support several AGP chipsets (not used)
+
+# CardBus bridge support - DISABLED (no CardBus slots)
+#DISABLED: device		cbb			# CardBus (yenta) bridge
+#DISABLED: device		cardbus			# CardBus (32-bit) bus
+
+# Serial (COM) ports
+device		uart			# Generic UART driver
+
+# Parallel port - DISABLED (not needed)
+#DISABLED: device		ppc
+#DISABLED: device		ppbus			# Parallel port bus (required)
+#DISABLED: device		lpt			# Printer
+#DISABLED: device		ppi			# Parallel port interface device
+#device		vpo			# Requires scbus and da
+
+device		puc			# Multi I/O cards and multi-channel UARTs
+
+# PCI/PCI-X/PCIe Ethernet NICs that use iflib infrastructure - Only Intel I211 needed
+device		iflib
+device		em			# Intel PRO/1000 Gigabit Ethernet Family (includes I211)
+#DISABLED: device		igc			# Intel I225 2.5G Ethernet
+#DISABLED: device		ix			# Intel PRO/10GbE PCIE PF Ethernet
+#DISABLED: device		ixv			# Intel PRO/10GbE PCIE VF Ethernet
+#DISABLED: device		ixl			# Intel 700 Series Physical Function
+#DISABLED: device		iavf			# Intel Adaptive Virtual Function
+#DISABLED: device		ice			# Intel 800 Series Physical Function
+#DISABLED: device		vmx			# VMware VMXNET3 Ethernet
+#DISABLED: device		axp			# AMD EPYC integrated NIC (requires miibus)
+
+# PCI Ethernet NICs - DISABLED (only Intel I211 in use)
+#DISABLED: device		bxe			# Broadcom NetXtreme II BCM5771X/BCM578XX 10GbE
+#DISABLED: device		le			# AMD Am7900 LANCE and Am79C9xx PCnet
+#DISABLED: device		ti			# Alteon Networks Tigon I/II gigabit Ethernet
+
+# Nvidia/Mellanox Connect-X 4 and later, Ethernet only - DISABLED (not used)
+#  o requires COMPAT_LINUXKPI and xz(4)
+#  o mlx5ib requires ibcore infra and is not included by default
+#DISABLED: device		mlx5			# Base driver
+#DISABLED: device		mlxfw			# Firmware update
+#DISABLED: device		mlx5en			# Ethernet driver
+
+# PCI Ethernet NICs that use the common MII bus controller code - DISABLED (only Intel I211 in use)
+# NOTE: Be sure to keep the 'device miibus' line in order to use these NICs!
+#DISABLED: device		miibus			# MII bus support
+#DISABLED: device		ae			# Attansic/Atheros L2 FastEthernet
+#DISABLED: device		age			# Attansic/Atheros L1 Gigabit Ethernet
+#DISABLED: device		alc			# Atheros AR8131/AR8132 Ethernet
+#DISABLED: device		ale			# Atheros AR8121/AR8113/AR8114 Ethernet
+#DISABLED: device		bce			# Broadcom BCM5706/BCM5708 Gigabit Ethernet
+#DISABLED: device		bfe			# Broadcom BCM440x 10/100 Ethernet
+#DISABLED: device		bge			# Broadcom BCM570xx Gigabit Ethernet
+#DISABLED: device		cas			# Sun Cassini/Cassini+ and NS DP83065 Saturn
+#DISABLED: device		dc			# DEC/Intel 21143 and various workalikes
+#DISABLED: device		et			# Agere ET1310 10/100/Gigabit Ethernet
+#DISABLED: device		fxp			# Intel EtherExpress PRO/100B (82557, 82558)
+#DISABLED: device		gem			# Sun GEM/Sun ERI/Apple GMAC
+#DISABLED: device		jme			# JMicron JMC250 Gigabit/JMC260 Fast Ethernet
+#DISABLED: device		lge			# Level 1 LXT1001 gigabit Ethernet
+#DISABLED: device		msk			# Marvell/SysKonnect Yukon II Gigabit Ethernet
+#DISABLED: device		nfe			# nVidia nForce MCP on-board Ethernet
+#DISABLED: device		nge			# NatSemi DP83820 gigabit Ethernet
+#DISABLED: device		re			# RealTek 8139C+/8169/8169S/8110S
+#DISABLED: device		rl			# RealTek 8129/8139
+#DISABLED: device		sge			# Silicon Integrated Systems SiS190/191
+#DISABLED: device		sis			# Silicon Integrated Systems SiS 900/SiS 7016
+#DISABLED: device		sk			# SysKonnect SK-984x & SK-982x gigabit Ethernet
+#DISABLED: device		ste			# Sundance ST201 (D-Link DFE-550TX)
+#DISABLED: device		stge			# Sundance/Tamarack TC9021 gigabit Ethernet
+#DISABLED: device		vge			# VIA VT612x gigabit Ethernet
+#DISABLED: device		vr			# VIA Rhine, Rhine II
+#DISABLED: device		xl			# 3Com 3c90x (``Boomerang'', ``Cyclone'')
+
+# Wireless NIC cards - DISABLED (router has no WiFi)
+#DISABLED: device		wlan			# 802.11 support
+#DISABLED: options 	IEEE80211_DEBUG		# enable debug msgs
+#DISABLED: options 	IEEE80211_SUPPORT_MESH	# enable 802.11s draft support
+#DISABLED: device		wlan_wep		# 802.11 WEP support
+#DISABLED: device		wlan_tkip		# 802.11 TKIP support
+#DISABLED: device		wlan_ccmp		# 802.11 CCMP support
+#DISABLED: device		wlan_gcmp		# 802.11 GCMP support
+#DISABLED: device		wlan_amrr		# AMRR transmit rate control algorithm
+#DISABLED: device		ath			# Atheros CardBus/PCI NICs
+#DISABLED: device		ath_hal			# Atheros CardBus/PCI chip support
+#DISABLED: options 	AH_AR5416_INTERRUPT_MITIGATION # AR5416 interrupt mitigation
+#DISABLED: device		ath_rate_sample		# SampleRate tx rate control for ath
+#device		bwi			# Broadcom BCM430x/BCM431x wireless NICs.
+#device		bwn			# Broadcom BCM43xx wireless NICs.
+#DISABLED: device		ipw			# Intel 2100 wireless NICs.
+#DISABLED: device		iwi			# Intel 2200BG/2225BG/2915ABG wireless NICs.
+#DISABLED: device		iwn			# Intel 4965/1000/5000/6000 wireless NICs.
+#DISABLED: device		malo			# Marvell Libertas wireless NICs.
+#DISABLED: device		mwl			# Marvell 88W8363 802.11n wireless NICs.
+#DISABLED: device		ral			# Ralink Technology RT2500 wireless NICs.
+#DISABLED: device		wpi			# Intel 3945ABG wireless NICs.
+
+# Pseudo devices.
+device		crypto			# core crypto support
+device		aesni			# AES-NI OpenCrypto module
+device		loop			# Network loopback
+device		padlock_rng		# VIA Padlock RNG
+device		rdrand_rng		# Intel Bull Mountain RNG
+device		ether			# Ethernet support
+device		vlan			# 802.1Q VLAN support
+device		tuntap			# Packet tunnel.
+device		md			# Memory "disks"
+#DISABLED: device		gif			# IPv6 and IPv4 tunneling (no IPv6)
+device		firmware		# firmware assist module
+device		xz			# lzma decompression
+
+# The `bpf' device enables the Berkeley Packet Filter.
+# Be aware of the administrative consequences of enabling this!
+# Note that 'bpf' is required for DHCP.
+device		bpf			# Berkeley packet filter
+
+# USB support
+#DISABLED: options 	USB_DEBUG		# enable debug msgs (debugging only)
+device		uhci			# UHCI PCI->USB interface
+device		ohci			# OHCI PCI->USB interface
+device		ehci			# EHCI PCI->USB interface (USB 2.0)
+device		xhci			# XHCI PCI->USB interface (USB 3.0)
+device		usb			# USB Bus (required)
+device		usbhid			# USB HID Transport
+device		hkbd			# HID Keyboard
+device		ukbd			# USB Keyboard
+device		umass			# Disks/Mass storage - Requires scbus and da
+
+# Sound support - DISABLED (router doesn't need audio)
+#DISABLED: device		sound			# Generic sound driver (required)
+#DISABLED: device		snd_cmi			# CMedia CMI8338/CMI8738
+#DISABLED: device		snd_csa			# Crystal Semiconductor CS461x/428x
+#DISABLED: device		snd_emu10kx		# Creative SoundBlaster Live! and Audigy
+#DISABLED: device		snd_es137x		# Ensoniq AudioPCI ES137x
+#DISABLED: device		snd_hda			# Intel High Definition Audio
+#DISABLED: device		snd_ich			# Intel, NVidia and other ICH AC'97 Audio
+#DISABLED: device		snd_via8233		# VIA VT8233x Audio
+
+# MMC/SD - DISABLED (no SD card reader)
+#DISABLED: device		mmc			# MMC/SD bus
+#DISABLED: device		mmcsd			# MMC/SD memory card
+#DISABLED: device		sdhci			# Generic PCI SD Host Controller
+
+# VirtIO support - DISABLED (bare metal, not VM)
+#DISABLED: device		virtio			# Generic VirtIO bus (required)
+#DISABLED: device		virtio_pci		# VirtIO PCI device
+#DISABLED: device		vtnet			# VirtIO Ethernet device
+#DISABLED: device		virtio_blk		# VirtIO Block device
+#DISABLED: device		virtio_scsi		# VirtIO SCSI device
+#DISABLED: device		virtio_balloon		# VirtIO Memory Balloon device
+
+# Linux KVM paravirtualization support - DISABLED (bare metal)
+#DISABLED: device		kvm_clock		# KVM paravirtual clock driver
+
+# HyperV drivers and enhancement support - DISABLED (bare metal)
+#DISABLED: device		hyperv			# HyperV drivers
+
+# Xen HVM Guest Optimizations - DISABLED (bare metal)
+# NOTE: XENHVM depends on xenpci and xentimer.
+# They must be added or removed together.
+#DISABLED: options 	XENHVM			# Xen HVM kernel infrastructure
+#DISABLED: device		xenefi			# Xen EFI timer device
+#DISABLED: device		xenpci			# Xen HVM Hypervisor services driver
+#DISABLED: device		xentimer		# Xen x86 PV timer device
+
+# Netmap provides direct access to TX/RX rings on supported NICs
+device		netmap			# netmap(4) support
+
+# evdev interface - DISABLED (desktop/input device feature, not needed)
+#DISABLED: options 	EVDEV_SUPPORT		# evdev support in legacy drivers
+#DISABLED: device		evdev			# input event device support
+#DISABLED: device		uinput			# install /dev/uinput cdev
+
+# HID support
+#DISABLED: options 	HID_DEBUG		# enable debug msgs (debugging only)
+device		hid			# Generic HID support
+device		hidbus			# Generic HID Bus
+#DISABLED: options 	IICHID_SAMPLING		# Workaround missing GPIO INTR support (not needed)
+
+# EFI devices
+device		efidev			# EFI pseudo-device
+device		efirtc			# EFI RTC

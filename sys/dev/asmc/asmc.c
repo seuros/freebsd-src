@@ -981,7 +981,7 @@ out:
 	asmc_sms_calibrate(dev);
 nosms:
 	/* Wake-on-LAN convenience sysctl */
-	SYSCTL_ADD_PROC(sysctlctx,
+	SYSCTL_ADD_PROC(device_get_sysctl_ctx(dev),
 	    SYSCTL_CHILDREN(device_get_sysctl_tree(dev)),
 	    OID_AUTO, "wol",
 	    CTLTYPE_U8 | CTLFLAG_RW | CTLFLAG_NEEDGIANT,

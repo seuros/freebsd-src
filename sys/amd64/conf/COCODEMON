@@ -1,0 +1,184 @@
+#
+# COCODEMON -- Kernel configuration for Mac Mini 5,1 (Mid 2011)
+# Optimized for SMC exploration and debugging
+#
+# Hardware:
+#   CPU: Intel Core i5-2415M @ 2.30GHz (2 cores, 4 threads)
+#   RAM: 8GB DDR3
+#   NIC: Broadcom BCM57765 (bge driver)
+#   Storage: AHCI SATA
+#   SMC: Apple SMC Mac Mini 5,1
+#
+
+cpu		HAMMER
+ident		COCODEMON
+
+# Debug build
+makeoptions	DEBUG=-g		# Build kernel with gdb(1) debug symbols
+makeoptions	WITH_CTF=1		# DTrace support
+
+# === CORE OPTIONS ===
+options 	SCHED_ULE		# ULE scheduler
+options 	PREEMPTION		# Enable kernel thread preemption
+options 	VIMAGE			# VNET support
+options 	INET			# IPv4
+options 	INET6			# IPv6 (Mac needs this)
+options 	IPSEC_SUPPORT		# IPsec
+options 	TCP_OFFLOAD		# TCP offload
+options 	TCP_RFC7413		# TCP Fast Open
+options 	FFS			# Berkeley Fast Filesystem
+options 	SOFTUPDATES		# FFS soft updates
+options 	UFS_ACL			# Access control lists
+options 	UFS_DIRHASH		# Big directory performance
+options 	NFSCL			# NFS client
+options 	MSDOSFS			# FAT filesystem
+options 	CD9660			# ISO 9660
+options 	PROCFS			# Process filesystem
+options 	PSEUDOFS		# Pseudo-filesystem framework
+options 	TMPFS			# Memory filesystem
+options 	GEOM_LABEL		# Disk labels
+options 	EFIRT			# EFI Runtime Services
+options 	COMPAT_FREEBSD32	# 32-bit compat
+options 	COMPAT_FREEBSD4
+options 	COMPAT_FREEBSD5
+options 	COMPAT_FREEBSD6
+options 	COMPAT_FREEBSD7
+options 	COMPAT_FREEBSD9
+options 	COMPAT_FREEBSD10
+options 	COMPAT_FREEBSD11
+options 	COMPAT_FREEBSD12
+options 	COMPAT_FREEBSD13
+options 	COMPAT_FREEBSD14
+options 	KTRACE			# ktrace(1) support
+options 	STACK			# stack(9) support
+options 	SYSVSHM			# SYSV shared memory
+options 	SYSVMSG			# SYSV message queues
+options 	SYSVSEM			# SYSV semaphores
+options 	_KPOSIX_PRIORITY_SCHEDULING
+options 	PRINTF_BUFR_SIZE=128
+options 	KBD_INSTALL_CDEV
+options 	AUDIT			# Security auditing
+options 	CAPABILITY_MODE		# Capsicum
+options 	CAPABILITIES
+options 	MAC			# TrustedBSD MAC
+options 	INCLUDE_CONFIG_FILE
+
+# === DEBUG OPTIONS (for SMC exploration) ===
+options 	KDB			# Kernel debugger support
+options 	KDB_TRACE		# Stack trace on panic
+options 	DDB			# Interactive kernel debugger
+options 	GDB			# Remote GDB support
+options 	WITNESS			# Lock order checking
+options 	WITNESS_SKIPSPIN	# Skip spin locks (less noisy)
+options 	INVARIANTS		# Extra sanity checks
+options 	INVARIANT_SUPPORT	# Required for INVARIANTS
+options 	DEBUG_VFS_LOCKS		# VFS lock debugging
+options 	VERBOSE_SYSINIT=0	# Verbose boot messages
+
+# DTrace support
+options 	KDTRACE_FRAME
+options 	KDTRACE_HOOKS
+options 	DDB_CTF
+
+# Kernel dumps
+options 	EKCD			# Encrypted dumps
+options 	GZIO			# gzip dumps
+options 	ZSTDIO			# zstd dumps
+options 	DEBUGNET
+options 	NETDUMP
+
+# SMP
+options 	SMP
+
+# CPU frequency control
+device		cpufreq
+
+# === BUS SUPPORT ===
+device		acpi
+device		smbios
+device		pci
+
+# === APPLE SMC SUPPORT (the main goal!) ===
+device		asmc			# Apple System Management Controller
+options 	DEBUG		# Enable DEBUG for asmc verbose output
+
+# === STORAGE ===
+device		ahci			# AHCI SATA (Mac Mini uses this)
+device		scbus			# SCSI bus
+device		da			# Direct Access (disks)
+device		pass			# Passthrough device
+device		cd			# CD-ROM (Mac has slot-load)
+device		ses			# Enclosure services
+
+# === INPUT ===
+device		atkbdc			# AT keyboard controller
+device		atkbd			# AT keyboard
+device		psm			# PS/2 mouse
+device		kbdmux
+
+# === VIDEO ===
+device		vga
+device		vt
+device		vt_vga
+device		vt_efifb
+device		vt_vbefb
+device		agp			# AGP support (Intel HD 3000 uses this)
+
+# === SERIAL ===
+device		uart
+
+# === NETWORK ===
+device		iflib
+device		miibus			# MII bus (required for bge)
+device		bge			# Broadcom BCM57765 - Mac Mini NIC
+device		em			# Intel (for flexibility)
+
+# === PSEUDO DEVICES ===
+device		crypto
+device		aesni			# AES-NI (Sandy Bridge has this)
+device		loop
+device		rdrand_rng
+device		ether
+device		vlan
+device		tuntap
+device		md
+device		gif			# IPv6 tunneling
+device		firmware
+device		xz
+device		bpf			# Berkeley packet filter
+
+# === USB ===
+options 	USB_DEBUG		# USB debugging
+device		uhci
+device		ohci
+device		ehci			# USB 2.0
+device		usb
+device		usbhid
+device		hkbd
+device		ukbd
+device		umass			# USB storage
+device		uhid			# USB HID
+
+# === HID ===
+options 	HID_DEBUG		# HID debugging
+device		hid
+device		hidbus
+
+# === FIREWIRE (Mac Mini has FireWire 800) ===
+device		firewire
+device		sbp			# SCSI over FireWire
+
+# === SOUND (Intel HD Audio - for completeness) ===
+device		sound
+device		snd_hda			# Intel HD Audio
+
+# === THERMAL ===
+device		coretemp		# CPU temperature
+
+# === EFI ===
+device		efidev
+device		efirtc
+
+# === ACPI EXTRAS ===
+device		acpi_video		# ACPI video extensions
+options BWN_GPL_PHY

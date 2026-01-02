@@ -27,14 +27,6 @@
 #include <machine/bus.h>
 #include <machine/resource.h>
 
-#include <dev/bwn/if_bwn_debug.h>
-#include <dev/bwn/if_bwn_misc.h>
-#include <dev/bwn/if_bwn_phy_ht.h>
-#include <dev/bwn/if_bwnreg.h>
-#include <dev/bwn/if_bwnvar.h>
-#include <dev/pci/pcireg.h>
-#include <dev/pci/pcivar.h>
-
 #include <net/ethernet.h>
 #include <net/if.h>
 #include <net/if_arp.h>
@@ -43,11 +35,20 @@
 #include <net/if_media.h>
 #include <net/if_types.h>
 #include <net/if_var.h>
-#include <net80211/ieee80211_phy.h>
-#include <net80211/ieee80211_radiotap.h>
-#include <net80211/ieee80211_ratectl.h>
-#include <net80211/ieee80211_regdomain.h>
+
 #include <net80211/ieee80211_var.h>
+#include <net80211/ieee80211_radiotap.h>
+#include <net80211/ieee80211_regdomain.h>
+#include <net80211/ieee80211_phy.h>
+#include <net80211/ieee80211_ratectl.h>
+
+#include <dev/bwn/if_bwn_debug.h>
+#include <dev/bwn/if_bwn_misc.h>
+#include <dev/bwn/if_bwnreg.h>
+#include <dev/bwn/if_bwnvar.h>
+#include <dev/bwn/if_bwn_phy_ht.h>
+#include <dev/pci/pcireg.h>
+#include <dev/pci/pcivar.h>
 
 /* From if_bwn_phy_common.h - avoid full include due to BHND dependency */
 extern int bwn_mac_phy_clock_set(struct bwn_mac *mac, int enabled);
@@ -55,6 +56,12 @@ extern int bwn_phy_force_clock(struct bwn_mac *mac, int force);
 
 #include <gnu/dev/bwn/phy_ht/if_bwn_phy_ht_tables.h>
 #include <gnu/dev/bwn/phy_ht/if_bwn_radio_2059.h>
+
+/* Forward declarations for TX power control functions */
+static void bwn_phy_ht_tx_power_ctl(struct bwn_mac *mac, bool enable);
+static void bwn_phy_ht_tx_power_ctl_idle_tssi(struct bwn_mac *mac);
+static void bwn_phy_ht_tx_power_ctl_setup(struct bwn_mac *mac);
+static void bwn_phy_ht_tssi_setup(struct bwn_mac *mac);
 
 /*
  * HT PHY register definitions (from Linux b43 phy_ht.h)
@@ -128,6 +135,17 @@ extern int bwn_phy_force_clock(struct bwn_mac *mac, int force);
 #define BWN_PHY_HT_RSSI_C1 0x219
 #define BWN_PHY_HT_RSSI_C2 0x21a
 #define BWN_PHY_HT_RSSI_C3 0x21b
+
+/* RSSI type enum - from Linux b43 phy_ht.h */
+enum ht_rssi_type {
+	HT_RSSI_W1,
+	HT_RSSI_W2,
+	HT_RSSI_G,
+	HT_RSSI_I,
+	HT_RSSI_TSSI_2G,
+	HT_RSSI_TSSI_5G,
+	HT_RSSI_TBD,
+};
 
 /* TX power control registers */
 #define BWN_PHY_HT_TXPCTL_CMD_C1	      0x1e7
@@ -755,6 +773,7 @@ bwn_phy_ht_bphy_init(struct bwn_mac *mac)
 int
 bwn_phy_ht_init(struct bwn_mac *mac)
 {
+	struct bwn_phy_ht *phy_ht = mac->mac_phy.phy_ht;
 	uint16_t tmp;
 	static const uint16_t gain_tab7_14e[] = { 0x010f, 0x010f };
 	static const uint16_t gain_tab7_130[] = { 0x777, 0x111, 0x111, 0x777,
@@ -1399,8 +1418,10 @@ bwn_phy_ht_tx_power_ctl_idle_tssi(struct bwn_mac *mac)
 		bwn_phy_ht_set(mac, base[core] + 0, 0x1000);
 	}
 
+	device_printf(mac->mac_sc->sc_dev, "HT-PHY: tx_tone starting\n");
 	bwn_phy_ht_tx_tone(mac);
 	DELAY(20);
+	device_printf(mac->mac_sc->sc_dev, "HT-PHY: polling RSSI\n");
 	bwn_phy_ht_poll_rssi(mac, HT_RSSI_TSSI_2G, rssi_buf, 1);
 	bwn_phy_ht_stop_playback(mac);
 	bwn_phy_ht_reset_cca(mac);
@@ -1408,6 +1429,10 @@ bwn_phy_ht_tx_power_ctl_idle_tssi(struct bwn_mac *mac)
 	phy_ht->idle_tssi[0] = rssi_buf[0] & 0xff;
 	phy_ht->idle_tssi[1] = rssi_buf[2] & 0xff;
 	phy_ht->idle_tssi[2] = rssi_buf[4] & 0xff;
+
+	device_printf(mac->mac_sc->sc_dev,
+	    "HT-PHY: idle_tssi = [%d, %d, %d]\n",
+	    phy_ht->idle_tssi[0], phy_ht->idle_tssi[1], phy_ht->idle_tssi[2]);
 
 	for (core = 0; core < 3; core++) {
 		bwn_phy_ht_write(mac, base[core] + 0, save_regs[core][0]);
@@ -1443,7 +1468,7 @@ bwn_phy_ht_tx_power_ctl_setup(struct bwn_mac *mac)
 	uint8_t *idle = phy_ht->idle_tssi;
 	uint8_t target[3];
 	int16_t a1[3], b0[3], b1[3];
-	int i, c;
+	int c;
 
 	for (c = 0; c < 3; c++) {
 		target[c] = 52;
