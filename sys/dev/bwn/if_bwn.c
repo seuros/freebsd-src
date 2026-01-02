@@ -3886,6 +3886,16 @@ bwn_set_opmode(struct bwn_mac *mac)
 		ctl &= ~BWN_MACCTL_STA;
 	ctl |= sc->sc_filters;
 
+	/* TEMP DEBUG: for HT-PHY, force RX accept-all to bypass filters */
+	if (mac->mac_phy.type == BWN_PHYTYPE_HT) {
+		ctl |= BWN_MACCTL_PASS_CTL |
+		    BWN_MACCTL_PASS_BADPLCP |
+		    BWN_MACCTL_PASS_BADFCS |
+		    BWN_MACCTL_PROMISC |
+		    BWN_MACCTL_BEACON_PROMISC;
+		ctl |= BWN_MACCTL_DISC_PMQ;
+	}
+
 	if (bhnd_get_hwrev(sc->sc_dev) <= 4)
 		ctl |= BWN_MACCTL_PROMISC;
 
