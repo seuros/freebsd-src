@@ -5135,6 +5135,19 @@ bwn_intrtask(void *arg, int npending)
 	for (i = 0; i < N(mac->mac_reason); i++)
 		merged |= mac->mac_reason[i];
 
+	/* Debug: print interrupt reasons every 1000th interrupt */
+	{
+		static int intr_cnt = 0;
+		static int rx_cnt = 0;
+		if (mac->mac_reason[0] & BWN_DMAINTR_RX_DONE)
+			rx_cnt++;
+		if (intr_cnt++ % 1000 == 0)
+			device_printf(sc->sc_dev,
+			    "intr #%d: rx_cnt=%d reason=0x%x r[0]=0x%x\n",
+			    intr_cnt, rx_cnt, mac->mac_reason_intr,
+			    mac->mac_reason[0]);
+	}
+
 	if (mac->mac_reason_intr & BWN_INTR_MAC_TXERR)
 		device_printf(sc->sc_dev, "MAC trans error\n");
 
@@ -5182,6 +5195,11 @@ bwn_intrtask(void *arg, int npending)
 
 	if (mac->mac_flags & BWN_MAC_FLAG_DMA) {
 		if (mac->mac_reason[0] & BWN_DMAINTR_RX_DONE) {
+			static int rx_debug_cnt = 0;
+			if (rx_debug_cnt++ < 5)
+				device_printf(sc->sc_dev,
+				    "RX interrupt, reason[0]=0x%x\n",
+				    mac->mac_reason[0]);
 			bwn_dma_rx(mac->mac_method.dma.rx);
 			rx = 1;
 		}
