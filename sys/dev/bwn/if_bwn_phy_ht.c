@@ -1276,6 +1276,36 @@ bwn_phy_ht_set_txpwr(struct bwn_mac *mac)
 void
 bwn_phy_ht_task_15s(struct bwn_mac *mac)
 {
+	static int dbg_cnt;
+
+	/* TEMP DEBUG: dump HT RX/AGC related regs */
+	if (dbg_cnt < 10) {
+		uint16_t rssi1, rssi2, rssi3;
+		uint16_t bbcfg, bandctl, class_ctl;
+		uint16_t rf_ctl_cmd, rf_seq_stat, rf_seq_mode;
+		uint16_t afe1, afe2, afe3;
+
+		rssi1 = bwn_phy_ht_read(mac, BWN_PHY_HT_RSSI_C1);
+		rssi2 = bwn_phy_ht_read(mac, BWN_PHY_HT_RSSI_C2);
+		rssi3 = bwn_phy_ht_read(mac, BWN_PHY_HT_RSSI_C3);
+
+		bbcfg = bwn_phy_ht_read(mac, BWN_PHY_HT_BBCFG);
+		bandctl = bwn_phy_ht_read(mac, BWN_PHY_HT_BANDCTL);
+		class_ctl = bwn_phy_ht_read(mac, BWN_PHY_HT_CLASS_CTL);
+		rf_ctl_cmd = bwn_phy_ht_read(mac, BWN_PHY_HT_RF_CTL_CMD);
+		rf_seq_mode = bwn_phy_ht_read(mac, BWN_PHY_HT_RF_SEQ_MODE);
+		rf_seq_stat = bwn_phy_ht_read(mac, BWN_PHY_HT_RF_SEQ_STATUS);
+
+		afe1 = bwn_phy_ht_read(mac, BWN_PHY_HT_AFE_C1);
+		afe2 = bwn_phy_ht_read(mac, BWN_PHY_HT_AFE_C2);
+		afe3 = bwn_phy_ht_read(mac, BWN_PHY_HT_AFE_C3);
+
+		device_printf(mac->mac_sc->sc_dev,
+		    "HT-PHY: RX dbg rssi=[0x%04x 0x%04x 0x%04x] BBCFG=0x%04x BANDCTL=0x%04x CLASS=0x%04x RFCTL=0x%04x SEQMODE=0x%04x SEQSTAT=0x%04x AFE=[0x%04x 0x%04x 0x%04x]\n",
+		    rssi1, rssi2, rssi3, bbcfg, bandctl, class_ctl,
+		    rf_ctl_cmd, rf_seq_mode, rf_seq_stat, afe1, afe2, afe3);
+		dbg_cnt++;
+	}
 }
 
 void
