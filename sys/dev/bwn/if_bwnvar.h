@@ -459,6 +459,7 @@ struct bwn_b206x_rfinit_entry {
 };
 
 struct bwn_phy_n;
+struct bwn_phy_ht;
 
 struct bwn_phy {
 	uint8_t				type;
@@ -477,6 +478,7 @@ struct bwn_phy {
 	 * structs..
 	 */
 	struct bwn_phy_n		*phy_n;
+	struct bwn_phy_ht		*phy_ht;
 
 	uint16_t			rf_manuf;
 	uint16_t			rf_ver;

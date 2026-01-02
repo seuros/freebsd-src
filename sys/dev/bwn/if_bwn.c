@@ -91,6 +91,7 @@
 #include <dev/bwn/if_bwn_phy_g.h>
 #include <dev/bwn/if_bwn_phy_lp.h>
 #include <dev/bwn/if_bwn_phy_n.h>
+#include <dev/bwn/if_bwn_phy_ht.h>
 
 #include "bhnd_nvram_map.h"
 
@@ -496,6 +497,7 @@ static const uint16_t bwn_wme_shm_offsets[] = {
 static const struct bhnd_device bwn_devices[] = {
 	BWN_DEV(HWREV_RANGE(5, 16)),
 	BWN_DEV(HWREV_EQ(23)),
+	BWN_DEV(HWREV_EQ(29)),	/* BCM4331 D11 core */
 	BHND_DEVICE_END
 };
 
@@ -646,15 +648,18 @@ bwn_attach(device_t dev)
 	    "Note: compiled with BWN_GPL_PHY; includes GPLv2 code\n");
 #endif
 
+	device_printf(sc->sc_dev, "DEBUG: About to allocate IRQ\n");
 	mac->mac_rid_irq = 0;
 	mac->mac_res_irq = bus_alloc_resource_any(dev, SYS_RES_IRQ,
 	    &mac->mac_rid_irq, RF_ACTIVE | RF_SHAREABLE);
 
 	if (mac->mac_res_irq == NULL) {
+		device_printf(sc->sc_dev, "DEBUG: IRQ alloc FAILED\n");
 		device_printf(sc->sc_dev, "couldn't allocate IRQ resource\n");
 		error = ENXIO;
 		goto fail;
 	}
+	device_printf(sc->sc_dev, "DEBUG: IRQ allocated, setting up interrupt\n");
 
 	error = bus_setup_intr(dev, mac->mac_res_irq,
 	    INTR_TYPE_NET | INTR_MPSAFE, bwn_intr, NULL, mac,
@@ -669,9 +674,10 @@ bwn_attach(device_t dev)
 
 	/*
 	 * calls attach-post routine
+	 * HACK: For BCM4331 single-core, always call attach_post
 	 */
-	if ((sc->sc_flags & BWN_FLAG_ATTACHED) != 0)
-		bwn_attach_post(sc);
+	device_printf(sc->sc_dev, "DEBUG: Calling attach_post unconditionally\n");
+	bwn_attach_post(sc);
 
 	return (0);
 fail:
@@ -752,6 +758,7 @@ bwn_attach_post(struct bwn_softc *sc)
 	u_int			 core_unit;
 	int			 error;
 
+	device_printf(sc->sc_dev, "DEBUG: bwn_attach_post called\n");
 	ic = &sc->sc_ic;
 
 	ic->ic_softc = sc;
@@ -798,16 +805,23 @@ bwn_attach_post(struct bwn_softc *sc)
 	}
 
 	/* Read the MAC address from NVRAM */
+	device_printf(sc->sc_dev, "DEBUG: Reading MAC address from NVRAM (%s)\n", mac_varname);
 	error = bhnd_nvram_getvar_array(sc->sc_dev, mac_varname, ic->ic_macaddr,
 	    sizeof(ic->ic_macaddr), BHND_NVRAM_TYPE_UINT8_ARRAY);
 	if (error) {
+		device_printf(sc->sc_dev, "DEBUG: MAC read FAILED with error %d\n", error);
 		device_printf(sc->sc_dev, "error reading %s: %d\n", mac_varname,
 		    error);
 		return (error);
 	}
+	device_printf(sc->sc_dev, "DEBUG: MAC address read OK\n");
 
 	/* call MI attach routine. */
+	device_printf(sc->sc_dev, "DEBUG: Calling ieee80211_ifattach\n");
+	device_printf(sc->sc_dev, "DEBUG: ic_name=%s ic_softc=%p ic_opmode=%d ic_caps=0x%x\n",
+	    ic->ic_name, ic->ic_softc, ic->ic_opmode, ic->ic_caps);
 	ieee80211_ifattach(ic);
+	device_printf(sc->sc_dev, "DEBUG: ieee80211_ifattach returned\n");
 
 	/* override default methods */
 	ic->ic_raw_xmit = bwn_raw_xmit;
@@ -832,6 +846,7 @@ bwn_attach_post(struct bwn_softc *sc)
 
 	if (bootverbose)
 		ieee80211_announce(ic);
+	device_printf(sc->sc_dev, "DEBUG: attach_post completed successfully, returning 0\n");
 	return (0);
 }
 
@@ -1368,7 +1383,8 @@ bwn_attach_core(struct bwn_mac *mac)
 			have_a = 1;
 		else if (mac->mac_phy.type == BWN_PHYTYPE_G ||
 		    mac->mac_phy.type == BWN_PHYTYPE_N ||
-		    mac->mac_phy.type == BWN_PHYTYPE_LP)
+		    mac->mac_phy.type == BWN_PHYTYPE_LP ||
+		    mac->mac_phy.type == BWN_PHYTYPE_HT)
 			have_bg = 1;
 		else
 			KASSERT(0 == 1, ("%s: unknown phy type (%d)", __func__,
@@ -1431,22 +1447,30 @@ bwn_attach_core(struct bwn_mac *mac)
 		mac->mac_phy.prepare_hw = bwn_phy_n_prepare_hw;
 		mac->mac_phy.init_pre = bwn_phy_n_init_pre;
 		mac->mac_phy.init = bwn_phy_n_init;
-		mac->mac_phy.exit = bwn_phy_n_exit;
-		mac->mac_phy.phy_read = bwn_phy_n_read;
-		mac->mac_phy.phy_write = bwn_phy_n_write;
-		mac->mac_phy.rf_read = bwn_phy_n_rf_read;
-		mac->mac_phy.rf_write = bwn_phy_n_rf_write;
-		mac->mac_phy.use_hwpctl = bwn_phy_n_hwpctl;
-		mac->mac_phy.rf_onoff = bwn_phy_n_rf_onoff;
-		mac->mac_phy.switch_analog = bwn_phy_n_switch_analog;
-		mac->mac_phy.switch_channel = bwn_phy_n_switch_channel;
-		mac->mac_phy.get_default_chan = bwn_phy_n_get_default_chan;
-		mac->mac_phy.set_antenna = bwn_phy_n_set_antenna;
-		mac->mac_phy.set_im = bwn_phy_n_im;
-		mac->mac_phy.recalc_txpwr = bwn_phy_n_recalc_txpwr;
-		mac->mac_phy.set_txpwr = bwn_phy_n_set_txpwr;
-		mac->mac_phy.task_15s = bwn_phy_n_task_15s;
-		mac->mac_phy.task_60s = bwn_phy_n_task_60s;
+	} else if (mac->mac_phy.type == BWN_PHYTYPE_HT) {
+		/* HT PHY (BCM4331) - all stubs, no HW access */
+		device_printf(sc->sc_dev, "HT PHY detected (BCM4331)\n");
+		mac->mac_phy.attach = bwn_phy_ht_attach;
+		mac->mac_phy.detach = bwn_phy_ht_detach;
+		mac->mac_phy.prepare_hw = bwn_phy_ht_prepare_hw;
+		mac->mac_phy.init_pre = bwn_phy_ht_init_pre;
+		mac->mac_phy.init = bwn_phy_ht_init;
+		mac->mac_phy.exit = bwn_phy_ht_exit;
+		mac->mac_phy.phy_read = bwn_phy_ht_read;
+		mac->mac_phy.phy_write = bwn_phy_ht_write;
+		mac->mac_phy.rf_read = bwn_phy_ht_rf_read;
+		mac->mac_phy.rf_write = bwn_phy_ht_rf_write;
+		mac->mac_phy.use_hwpctl = bwn_phy_ht_hwpctl;
+		mac->mac_phy.rf_onoff = bwn_phy_ht_rf_onoff;
+		mac->mac_phy.switch_analog = bwn_phy_ht_switch_analog;
+		mac->mac_phy.switch_channel = bwn_phy_ht_switch_channel;
+		mac->mac_phy.get_default_chan = bwn_phy_ht_get_default_chan;
+		mac->mac_phy.set_antenna = bwn_phy_ht_set_antenna;
+		mac->mac_phy.set_im = bwn_phy_ht_im;
+		mac->mac_phy.recalc_txpwr = bwn_phy_ht_recalc_txpwr;
+		mac->mac_phy.set_txpwr = bwn_phy_ht_set_txpwr;
+		mac->mac_phy.task_15s = bwn_phy_ht_task_15s;
+		mac->mac_phy.task_60s = bwn_phy_ht_task_60s;
 	} else {
 		device_printf(sc->sc_dev, "unsupported PHY type (%d)\n",
 		    mac->mac_phy.type);
@@ -2010,6 +2034,9 @@ bwn_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ], int unit,
 {
 	struct ieee80211vap *vap;
 	struct bwn_vap *bvp;
+	struct bwn_softc *sc = ic->ic_softc;
+
+	device_printf(sc->sc_dev, "DEBUG: bwn_vap_create called, opmode=%d\n", opmode);
 
 	switch (opmode) {
 	case IEEE80211_M_HOSTAP:
@@ -2021,6 +2048,7 @@ bwn_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ], int unit,
 	case IEEE80211_M_AHDEMO:
 		break;
 	default:
+		device_printf(sc->sc_dev, "DEBUG: bwn_vap_create: unsupported opmode %d\n", opmode);
 		return (NULL);
 	}
 
@@ -2039,6 +2067,7 @@ bwn_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ], int unit,
 	/* complete setup */
 	ieee80211_vap_attach(vap, ieee80211_media_change,
 	    ieee80211_media_status, mac);
+	device_printf(sc->sc_dev, "DEBUG: bwn_vap_create: returning vap %p\n", vap);
 	return (vap);
 }
 
@@ -2238,7 +2267,8 @@ bwn_core_init(struct bwn_mac *mac)
 	mac->mac_task_state = 0;
 	memset(&mac->mac_noise, 0, sizeof(mac->mac_noise));
 
-	mac->mac_phy.init_pre(mac);
+	if (mac->mac_phy.init_pre != NULL)
+		mac->mac_phy.init_pre(mac);
 
 	bwn_bt_disable(mac);
 	if (mac->mac_phy.prepare_hw) {
@@ -2525,6 +2555,7 @@ bwn_rate_init(struct bwn_mac *mac)
 	case BWN_PHYTYPE_G:
 	case BWN_PHYTYPE_LP:
 	case BWN_PHYTYPE_N:
+	case BWN_PHYTYPE_HT:
 		bwn_rate_write(mac, BWN_OFDM_RATE_6MB, 1);
 		bwn_rate_write(mac, BWN_OFDM_RATE_12MB, 1);
 		bwn_rate_write(mac, BWN_OFDM_RATE_18MB, 1);
@@ -4184,6 +4215,12 @@ bwn_fw_gets(struct bwn_mac *mac, enum bwn_fwtype type)
 		else
 			goto fail1;
 		break;
+	case BWN_PHYTYPE_HT:
+		if (rev == 29)
+			filename = "ht0initvals29";
+		else
+			goto fail1;
+		break;
 	default:
 		goto fail1;
 	}
@@ -4237,6 +4274,12 @@ bwn_fw_gets(struct bwn_mac *mac, enum bwn_fwtype type)
 			filename = "n0bsinitvals16";
 		else if (rev >= 11 && rev <= 12)
 			filename = "n0bsinitvals11";
+		else
+			goto fail1;
+		break;
+	case BWN_PHYTYPE_HT:
+		if (rev == 29)
+			filename = "ht0bsinitvals29";
 		else
 			goto fail1;
 		break;
@@ -5068,9 +5111,19 @@ static void
 bwn_intrtask(void *arg, int npending)
 {
 	struct bwn_mac *mac = arg;
-	struct bwn_softc *sc = mac->mac_sc;
+	struct bwn_softc *sc;
 	uint32_t merged = 0;
 	int i, tx = 0, rx = 0;
+
+	if (mac == NULL) {
+		printf("bwn_intrtask: mac is NULL!\n");
+		return;
+	}
+	sc = mac->mac_sc;
+	if (sc == NULL) {
+		printf("bwn_intrtask: sc is NULL!\n");
+		return;
+	}
 
 	BWN_LOCK(sc);
 	if (mac->mac_status < BWN_MAC_STATUS_STARTED ||
@@ -5403,6 +5456,14 @@ bwn_intr_txeof(struct bwn_mac *mac)
 	uint32_t stat0, stat1;
 	uint16_t tmp;
 
+	if (mac == NULL) {
+		printf("bwn_intr_txeof: mac is NULL!\n");
+		return;
+	}
+	if (mac->mac_sc == NULL) {
+		printf("bwn_intr_txeof: mac->mac_sc is NULL!\n");
+		return;
+	}
 	BWN_ASSERT_LOCKED(mac->mac_sc);
 
 	while (1) {
@@ -5632,8 +5693,15 @@ bwn_dma_rxeof(struct bwn_dma_ring *dr, int *slot)
 static void
 bwn_handle_txeof(struct bwn_mac *mac, const struct bwn_txstatus *status)
 {
-	struct bwn_softc *sc = mac->mac_sc;
-	struct bwn_stats *stats = &mac->mac_stats;
+	struct bwn_softc *sc;
+	struct bwn_stats *stats;
+
+	if (mac == NULL) {
+		printf("bwn_handle_txeof: mac is NULL!\n");
+		return;
+	}
+	sc = mac->mac_sc;
+	stats = &mac->mac_stats;
 
 	BWN_ASSERT_LOCKED(mac->mac_sc);
 
@@ -6130,12 +6198,19 @@ static void
 bwn_dma_handle_txeof(struct bwn_mac *mac,
     const struct bwn_txstatus *status)
 {
-	struct bwn_dma *dma = &mac->mac_method.dma;
+	struct bwn_dma *dma;
 	struct bwn_dma_ring *dr;
 	struct bwn_dmadesc_generic *desc;
 	struct bwn_dmadesc_meta *meta;
-	struct bwn_softc *sc = mac->mac_sc;
+	struct bwn_softc *sc;
 	int slot;
+
+	if (mac == NULL) {
+		printf("bwn_dma_handle_txeof: mac is NULL!\n");
+		return;
+	}
+	dma = &mac->mac_method.dma;
+	sc = mac->mac_sc;
 
 	BWN_ASSERT_LOCKED(sc);
 
@@ -7530,9 +7605,19 @@ bwn_led_newstate(struct bwn_mac *mac, enum ieee80211_state nstate)
 static void
 bwn_led_event(struct bwn_mac *mac, int event)
 {
-	struct bwn_softc *sc = mac->mac_sc;
-	struct bwn_led *led = sc->sc_blink_led;
+	struct bwn_softc *sc;
+	struct bwn_led *led;
 	int rate;
+
+	/* Validate mac pointer */
+	if (mac == NULL)
+		return;
+	sc = mac->mac_sc;
+	if (sc == NULL)
+		return;
+	led = sc->sc_blink_led;
+	if (led == NULL)
+		return;
 
 	if (event == BWN_LED_EVENT_POLL) {
 		if ((led->led_flags & BWN_LED_F_POLLABLE) == 0)
@@ -7559,6 +7644,9 @@ bwn_led_event(struct bwn_mac *mac, int event)
 		panic("unknown LED event %d\n", event);
 		break;
 	}
+	/* Bounds check rate for bwn_led_duration array (109 elements) */
+	if (rate < 0 || rate > 108)
+		rate = 0;
 	bwn_led_blink_start(mac, bwn_led_duration[rate].on_dur,
 	    bwn_led_duration[rate].off_dur);
 }
@@ -7566,9 +7654,19 @@ bwn_led_event(struct bwn_mac *mac, int event)
 static void
 bwn_led_blink_start(struct bwn_mac *mac, int on_dur, int off_dur)
 {
-	struct bwn_softc *sc = mac->mac_sc;
-	struct bwn_led *led = sc->sc_blink_led;
+	struct bwn_softc *sc;
+	struct bwn_led *led;
 	uint16_t val;
+
+	/* Validate mac pointer */
+	if (mac == NULL)
+		return;
+	sc = mac->mac_sc;
+	if (sc == NULL)
+		return;
+	led = sc->sc_blink_led;
+	if (led == NULL)
+		return;
 
 	val = BWN_READ_2(mac, BWN_GPIO_CONTROL);
 	val = bwn_led_onoff(led, val, 1);
@@ -7589,8 +7687,21 @@ static void
 bwn_led_blink_next(void *arg)
 {
 	struct bwn_mac *mac = arg;
-	struct bwn_softc *sc = mac->mac_sc;
+	struct bwn_softc *sc;
 	uint16_t val;
+
+	/* Validate mac pointer - can become invalid during RF state changes */
+	if (mac == NULL)
+		return;
+	sc = mac->mac_sc;
+	if (sc == NULL)
+		return;
+	/* Skip if device is not in a valid state */
+	if (mac->mac_status < BWN_MAC_STATUS_STARTED ||
+	    (sc->sc_flags & BWN_FLAG_INVALID)) {
+		sc->sc_led_blinking = 0;
+		return;
+	}
 
 	val = BWN_READ_2(mac, BWN_GPIO_CONTROL);
 	val = bwn_led_onoff(sc->sc_blink_led, val, 0);
@@ -7604,7 +7715,14 @@ static void
 bwn_led_blink_end(void *arg)
 {
 	struct bwn_mac *mac = arg;
-	struct bwn_softc *sc = mac->mac_sc;
+	struct bwn_softc *sc;
+
+	/* Validate mac pointer - can become invalid during RF state changes */
+	if (mac == NULL)
+		return;
+	sc = mac->mac_sc;
+	if (sc == NULL)
+		return;
 
 	sc->sc_led_blinking = 0;
 }
@@ -7645,7 +7763,16 @@ bwn_rfswitch(void *arg)
 	KASSERT(mac->mac_status >= BWN_MAC_STATUS_STARTED,
 	    ("%s: invalid MAC status %d", __func__, mac->mac_status));
 
-	if (mac->mac_phy.rev >= 3 || mac->mac_phy.type == BWN_PHYTYPE_LP
+	if (mac->mac_phy.type == BWN_PHYTYPE_HT) {
+		/*
+		 * HT-PHY: Skip RF switch detection entirely.
+		 * The register reads return incorrect values causing
+		 * spurious RF toggling during scan. Just reschedule
+		 * and return without doing anything.
+		 */
+		callout_schedule(&sc->sc_rfswitch_ch, hz);
+		return;
+	} else if (mac->mac_phy.rev >= 3 || mac->mac_phy.type == BWN_PHYTYPE_LP
 	    || mac->mac_phy.type == BWN_PHYTYPE_N) {
 		if (!(BWN_READ_4(mac, BWN_RF_HWENABLED_HI)
 			& BWN_RF_HWENABLED_HI_MASK))
