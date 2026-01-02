@@ -823,8 +823,14 @@ bwn_phy_ht_init(struct bwn_mac *mac)
 	bwn_phy_ht_classifier(mac, BWN_PHY_HT_CLASS_CTL_CCK_EN,
 	    BWN_PHY_HT_CLASS_CTL_CCK_EN);
 
-	/* AFE unknown init (from Linux) */
-	bwn_phy_ht_afe_unk1(mac);
+	/* Basic PHY register setup (from Linux) */
+	bwn_phy_ht_set(mac, 0xb1, 0x91);
+	bwn_phy_ht_write(mac, 0x32f, 0x0003);
+	bwn_phy_ht_write(mac, 0x077, 0x0010);
+	bwn_phy_ht_write(mac, 0x0b4, 0x0258);
+	bwn_phy_ht_mask(mac, 0x17e, ~0x4000);
+
+	bwn_phy_ht_write(mac, 0x0b9, 0x0072);
 
 	/*
 	 * Critical table writes for RX gain control (from Linux b43)
@@ -834,6 +840,9 @@ bwn_phy_ht_init(struct bwn_mac *mac)
 	bwn_httab_write_bulk(mac, B43_HTTAB16(7, 0x14e), 2, gain_tab7_14e);
 	bwn_httab_write_bulk(mac, B43_HTTAB16(7, 0x15e), 2, gain_tab7_14e);
 	bwn_httab_write_bulk(mac, B43_HTTAB16(7, 0x16e), 2, gain_tab7_14e);
+
+	/* AFE unknown init (from Linux) */
+	bwn_phy_ht_afe_unk1(mac);
 
 	/* Table 7: More gain settings */
 	bwn_httab_write_bulk(mac, B43_HTTAB16(7, 0x130), 9, gain_tab7_130);
@@ -862,7 +871,8 @@ bwn_phy_ht_init(struct bwn_mac *mac)
 	/* LNA gain tables for 3 cores */
 	bwn_httab_write_bulk(mac, B43_HTTAB16(0, 0x8), 4, gain_tab_lna);
 	bwn_httab_write_bulk(mac, B43_HTTAB16(1, 0x8), 4, gain_tab_lna);
-	bwn_httab_write_bulk(mac, B43_HTTAB16(2, 0x8), 4, gain_tab_lna);
+	/* Linux uses table 40 here (see b43 phy_ht.c) */
+	bwn_httab_write_bulk(mac, B43_HTTAB16(40, 0x8), 4, gain_tab_lna);
 
 	/* OFDM AGC settings */
 	/*
@@ -874,14 +884,6 @@ bwn_phy_ht_init(struct bwn_mac *mac)
 	bwn_phy_ht_maskset(mac, BWN_PHY_OFDM(0x24), 0x3f, 0xd);
 	bwn_phy_ht_maskset(mac, BWN_PHY_OFDM(0x64), 0x3f, 0xd);
 	bwn_phy_ht_maskset(mac, BWN_PHY_OFDM(0xa4), 0x3f, 0xd);
-
-	bwn_phy_ht_set(mac, 0xb1, 0x91);
-	bwn_phy_ht_write(mac, 0x32f, 0x0003);
-	bwn_phy_ht_write(mac, 0x077, 0x0010);
-	bwn_phy_ht_write(mac, 0x0b4, 0x0258);
-	bwn_phy_ht_mask(mac, 0x17e, ~0x4000);
-
-	bwn_phy_ht_write(mac, 0x0b9, 0x0072);
 
 	bwn_phy_ht_set(mac, BWN_PHY_EXTG(0x060), 0x1);
 	bwn_phy_ht_set(mac, BWN_PHY_EXTG(0x064), 0x1);
