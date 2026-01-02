@@ -7136,6 +7136,9 @@ bwn_tasks(void *arg)
 {
 	struct bwn_mac *mac = arg;
 	struct bwn_softc *sc = mac->mac_sc;
+	struct bwn_dma_ring *rxring;
+	uint32_t rxstat, rxctl, dptr;
+	int slot;
 
 	BWN_ASSERT_LOCKED(sc);
 	if (mac->mac_status != BWN_MAC_STATUS_STARTED)
@@ -7146,6 +7149,34 @@ bwn_tasks(void *arg)
 	if (mac->mac_task_state % 2 == 0)
 		bwn_task_30s(mac);
 	bwn_task_15s(mac);
+
+	/* TEMP DEBUG: poll RX DMA state for BCM4331/HT-PHY */
+	if (mac->mac_phy.type == BWN_PHYTYPE_HT &&
+	    (mac->mac_flags & BWN_MAC_FLAG_DMA)) {
+		static int dbg_cnt;
+
+		if (dbg_cnt < 10) {
+			rxring = mac->mac_method.dma.rx;
+			if (rxring->dr_type == BHND_DMA_ADDR_64BIT) {
+				rxctl = BWN_DMA_READ(rxring, BWN_DMA64_RXCTL);
+				rxstat = BWN_DMA_READ(rxring, BWN_DMA64_RXSTATUS);
+				dptr = rxstat & BWN_DMA64_RXSTATDPTR;
+				slot = dptr / sizeof(struct bwn_dmadesc64);
+			} else {
+				rxctl = BWN_DMA_READ(rxring, BWN_DMA32_RXCTL);
+				rxstat = BWN_DMA_READ(rxring, BWN_DMA32_RXSTATUS);
+				dptr = rxstat & BWN_DMA32_RXDPTR;
+				slot = dptr / sizeof(struct bwn_dmadesc32);
+			}
+
+			device_printf(sc->sc_dev,
+			    "bwn: RX DMA poll ctl=0x%08x stat=0x%08x dptr=0x%x slot=%d dma0_reason=0x%08x intr_reason=0x%08x\n",
+			    rxctl, rxstat, dptr, slot,
+			    BWN_READ_4(mac, BWN_DMA0_REASON),
+			    BWN_READ_4(mac, BWN_INTR_REASON));
+			dbg_cnt++;
+		}
+	}
 
 	mac->mac_task_state++;
 	callout_reset(&sc->sc_task_ch, hz * 15, bwn_tasks, mac);
