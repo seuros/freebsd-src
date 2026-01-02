@@ -50,9 +50,14 @@
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 
+/* PMU header for spuravoid types */
+#include <dev/bhnd/cores/pmu/bhnd_pmu.h>
+
 /* From if_bwn_phy_common.h - avoid full include due to BHND dependency */
 extern int bwn_mac_phy_clock_set(struct bwn_mac *mac, int enabled);
 extern int bwn_phy_force_clock(struct bwn_mac *mac, int force);
+extern void bwn_mac_switch_freq(struct bwn_mac *mac, bhnd_pmu_spuravoid spurmode);
+extern int bwn_wireless_core_phy_pll_reset(struct bwn_mac *mac);
 
 #include <gnu/dev/bwn/phy_ht/if_bwn_phy_ht_tables.h>
 #include <gnu/dev/bwn/phy_ht/if_bwn_radio_2059.h>
@@ -62,6 +67,10 @@ static void bwn_phy_ht_tx_power_ctl(struct bwn_mac *mac, bool enable);
 static void bwn_phy_ht_tx_power_ctl_idle_tssi(struct bwn_mac *mac);
 static void bwn_phy_ht_tx_power_ctl_setup(struct bwn_mac *mac);
 static void bwn_phy_ht_tssi_setup(struct bwn_mac *mac);
+
+/* Forward declarations for calibration functions */
+static void bwn_phy_ht_cal_rx_iq(struct bwn_mac *mac, int want_cals);
+static void bwn_phy_ht_cal_tx_iq_loft(struct bwn_mac *mac, int want_cals);
 
 /*
  * HT PHY register definitions (from Linux b43 phy_ht.h)
@@ -887,10 +896,22 @@ bwn_phy_ht_init(struct bwn_mac *mac)
 	tmp = bwn_httab_read(mac, B43_HTTAB16(7, 0x164));
 	bwn_httab_write(mac, B43_HTTAB16(7, 0x16a), tmp);
 
-	/* Reset CCA */
-	tmp = bwn_phy_ht_read(mac, BWN_PHY_HT_BBCFG);
-	bwn_phy_ht_write(mac, BWN_PHY_HT_BBCFG, tmp | BWN_PHY_HT_BBCFG_RSTCCA);
-	bwn_phy_ht_write(mac, BWN_PHY_HT_BBCFG, tmp & ~BWN_PHY_HT_BBCFG_RSTCCA);
+	/*
+	 * Reset CCA with force_clock.
+	 * Linux phy_ht.c lines 975-979: force_clock(true), toggle RSTCCA, force_clock(false)
+	 * Use PSM register for clock forcing (safer than bhnd ioctl).
+	 */
+	{
+		uint16_t psm;
+		psm = BWN_READ_2(mac, BWN_PSM_PHY_HDR);
+		BWN_WRITE_2(mac, BWN_PSM_PHY_HDR, psm | BWN_PSM_HDR_MAC_PHY_FORCE_CLK);
+
+		tmp = bwn_phy_ht_read(mac, BWN_PHY_HT_BBCFG);
+		bwn_phy_ht_write(mac, BWN_PHY_HT_BBCFG, tmp | BWN_PHY_HT_BBCFG_RSTCCA);
+		bwn_phy_ht_write(mac, BWN_PHY_HT_BBCFG, tmp & ~BWN_PHY_HT_BBCFG_RSTCCA);
+
+		BWN_WRITE_2(mac, BWN_PSM_PHY_HDR, psm);
+	}
 
 	/* Enable MAC PHY clock before RF sequences (from Linux) */
 	bwn_mac_phy_clock_set(mac, true);
@@ -945,6 +966,32 @@ bwn_phy_ht_init(struct bwn_mac *mac)
 	bwn_phy_ht_tx_power_ctl_setup(mac);
 	bwn_phy_ht_tssi_setup(mac);
 	bwn_phy_ht_tx_power_ctl(mac, phy_ht->tx_pwr_ctl);
+
+	/*
+	 * Re-enable analog frontend after all init operations.
+	 * The afe_unk1() function sets AFE_OVER bit 0x1 which overrides AFE bit 0.
+	 * Call switch_analog(on) to restore AFE registers to proper RX state:
+	 *   AFE_C1 = 0x00cd
+	 *   AFE_C1_OVER = 0x0000
+	 * This ensures the analog frontend is properly configured for receive.
+	 */
+	bwn_phy_ht_switch_analog(mac, 1);
+
+	/*
+	 * Debug: verify critical RX-related register values
+	 */
+	device_printf(mac->mac_sc->sc_dev, "HT-PHY: debug block start\n");
+	{
+		uint16_t bbcfg, bandctl;
+
+		bbcfg = bwn_phy_ht_read(mac, BWN_PHY_HT_BBCFG);
+		bandctl = bwn_phy_ht_read(mac, BWN_PHY_HT_BANDCTL);
+
+		device_printf(mac->mac_sc->sc_dev,
+		    "HT-PHY: BBCFG=0x%04x BANDCTL=0x%04x\n",
+		    bbcfg, bandctl);
+	}
+	device_printf(mac->mac_sc->sc_dev, "HT-PHY: debug block end\n");
 
 	device_printf(mac->mac_sc->sc_dev, "HT-PHY: init complete\n");
 
@@ -1048,6 +1095,15 @@ bwn_phy_ht_switch_channel(struct bwn_mac *mac, uint32_t newchan)
 	bwn_radio_2059_channel_setup(mac, e);
 
 	/*
+	 * Switch to 2GHz band mode - CRITICAL for RX to work!
+	 * Linux phy_ht.c line 777: b43_phy_mask(dev, B43_PHY_HT_BANDCTL, ~B43_PHY_HT_BANDCTL_5GHZ);
+	 * Without this, the PHY doesn't know it's in 2.4GHz mode and the receive path
+	 * may not be enabled for the correct band.
+	 */
+	bwn_phy_ht_mask(mac, BWN_PHY_HT_BANDCTL,
+	    (uint16_t)~BWN_PHY_HT_BANDCTL_5GHZ);
+
+	/*
 	 * Reset B-PHY (CCK baseband) for 2GHz operation.
 	 * This is critical - without it, the receiver won't work!
 	 * Linux phy_ht.c line 779: b43_phy_ht_bphy_reset(dev, false);
@@ -1077,19 +1133,89 @@ bwn_phy_ht_switch_channel(struct bwn_mac *mac, uint32_t newchan)
 	bwn_phy_ht_tx_power_fix(mac);
 
 	/*
-	 * Reset CCA and trigger RST2RX to enable receiver on new channel.
-	 * Note: Skip force_clock which crashes. Just toggle RSTCCA directly.
+	 * Full spur avoidance sequence from Linux b43_phy_ht_spur_avoid().
+	 * This is CRITICAL for RX to work properly.
+	 *
+	 * Linux sequence (phy_ht.c lines 733-760):
+	 * 1. Request PMU spuravoid mode update (reconfigures PLLs)
+	 * 2. Update TSF clock frequency for new PLL rate
+	 * 3. Reset PHY PLL
+	 * 4. Set/clear RSTRX based on channel
+	 * 5. Reset CCA with force_clock
 	 */
 	{
+		struct bwn_softc *sc = mac->mac_sc;
+		bhnd_pmu_spuravoid spurmode;
 		uint16_t bbcfg;
-		bbcfg = bwn_phy_ht_read(mac, BWN_PHY_HT_BBCFG);
-		bwn_phy_ht_write(mac, BWN_PHY_HT_BBCFG,
-		    bbcfg | BWN_PHY_HT_BBCFG_RSTCCA);
-		DELAY(1);
-		bwn_phy_ht_write(mac, BWN_PHY_HT_BBCFG,
-		    bbcfg & ~BWN_PHY_HT_BBCFG_RSTCCA);
+		int error;
+
+		/* Channels 13/14 need spur avoidance mode 1 */
+		spurmode = (newchan == 13 || newchan == 14) ?
+		    BHND_PMU_SPURAVOID_M1 : BHND_PMU_SPURAVOID_NONE;
+
+		/*
+		 * Request PMU to update PLL for spur avoidance.
+		 * This is equivalent to Linux bcma_pmu_spuravoid_pllupdate().
+		 */
+		if (sc->sc_pmu != NULL) {
+			error = bhnd_pmu_request_spuravoid(sc->sc_pmu, spurmode);
+			if (error) {
+				device_printf(sc->sc_dev,
+				    "HT-PHY: PMU spuravoid request failed: %d\n",
+				    error);
+				/* Continue anyway - may work without PMU update */
+			}
+		}
+
+		/*
+		 * Update TSF clock frequency to match new PLL rate.
+		 * From Linux b43_mac_switch_freq().
+		 */
+		bwn_mac_switch_freq(mac, spurmode);
+
+		/*
+		 * Reset PHY PLL after frequency change.
+		 * From Linux b43_wireless_core_phy_pll_reset().
+		 */
+		bwn_wireless_core_phy_pll_reset(mac);
+
+		/*
+		 * Set/clear RSTRX based on spur avoidance mode.
+		 * Channels 13/14: set RSTRX (receiver in special mode)
+		 * Other channels: clear RSTRX (normal receive)
+		 */
+		if (spurmode != BHND_PMU_SPURAVOID_NONE) {
+			bwn_phy_ht_set(mac, BWN_PHY_HT_BBCFG,
+			    BWN_PHY_HT_BBCFG_RSTRX);
+		} else {
+			bwn_phy_ht_mask(mac, BWN_PHY_HT_BBCFG,
+			    (uint16_t)~BWN_PHY_HT_BBCFG_RSTRX);
+		}
+
+		/*
+		 * Reset CCA with force_clock.
+		 * From Linux b43_phy_ht_reset_cca().
+		 * Use PSM register for clock forcing (safer than bhnd ioctl).
+		 */
+		{
+			uint16_t psm;
+			psm = BWN_READ_2(mac, BWN_PSM_PHY_HDR);
+			BWN_WRITE_2(mac, BWN_PSM_PHY_HDR,
+			    psm | BWN_PSM_HDR_MAC_PHY_FORCE_CLK);
+
+			bbcfg = bwn_phy_ht_read(mac, BWN_PHY_HT_BBCFG);
+			bwn_phy_ht_write(mac, BWN_PHY_HT_BBCFG,
+			    bbcfg | BWN_PHY_HT_BBCFG_RSTCCA);
+			DELAY(1);
+			bwn_phy_ht_write(mac, BWN_PHY_HT_BBCFG,
+			    bbcfg & ~BWN_PHY_HT_BBCFG_RSTCCA);
+
+			BWN_WRITE_2(mac, BWN_PSM_PHY_HDR, psm);
+		}
+
+		/* Trigger RST2RX sequence to enable receiver */
+		bwn_phy_ht_force_rf_sequence(mac, BWN_PHY_HT_RF_SEQ_TRIG_RST2RX);
 	}
-	bwn_phy_ht_force_rf_sequence(mac, BWN_PHY_HT_RF_SEQ_TRIG_RST2RX);
 
 	/*
 	 * Final register write from Linux phy_ht.c line 804:
@@ -1100,6 +1226,18 @@ bwn_phy_ht_switch_channel(struct bwn_mac *mac, uint32_t newchan)
 
 	/* Store the current channel */
 	mac->mac_phy.chan = newchan;
+
+	/* Debug: verify BBCFG and BANDCTL after spur_avoid */
+	{
+		uint16_t dbg_bbcfg, dbg_bandctl, dbg_afe1, dbg_afe1_over;
+		dbg_bbcfg = bwn_phy_ht_read(mac, BWN_PHY_HT_BBCFG);
+		dbg_bandctl = bwn_phy_ht_read(mac, BWN_PHY_HT_BANDCTL);
+		dbg_afe1 = bwn_phy_ht_read(mac, BWN_PHY_HT_AFE_C1);
+		dbg_afe1_over = bwn_phy_ht_read(mac, BWN_PHY_HT_AFE_C1_OVER);
+		device_printf(mac->mac_sc->sc_dev,
+		    "HT-PHY: ch=%u BBCFG=0x%04x BANDCTL=0x%04x AFE1=0x%04x OVER=0x%04x\n",
+		    newchan, dbg_bbcfg, dbg_bandctl, dbg_afe1, dbg_afe1_over);
+	}
 
 	device_printf(mac->mac_sc->sc_dev,
 	    "HT-PHY: channel switch to %u MHz complete\n", freq);
