@@ -402,7 +402,19 @@
 #define	BWN_DMA64_RXSTAT_DISABLED	0x00000000
 #define	BWN_DMA64_ADDREXT_MASK		0xC000000000000000ULL
 #define	BWN_DMA64_ADDREXT_SHIFT		62
-#define	BWN_DMA_RINGMEMSIZE		PAGE_SIZE
+/*
+ * DMA ring memory sizing/alignment.
+ *
+ * BCM4331 (HT-PHY) uses 64-bit DMA and has a hardware quirk where bit
+ * 0x00001000 in the DMA ring base address can leak into RXSTATUS DPTR.
+ * Linux avoids this by aligning 64-bit rings to 8KB.
+ */
+#define	BWN_DMA32_RINGMEMSIZE		4096
+#define	BWN_DMA64_RINGMEMSIZE		8192
+#define	BWN_DMA32_RINGALIGN		0x1000
+#define	BWN_DMA64_RINGALIGN		0x2000
+/* Legacy alias (32-bit rings) */
+#define	BWN_DMA_RINGMEMSIZE		BWN_DMA32_RINGMEMSIZE
 #define	BWN_DMA0_RX_FRAMEOFFSET_FW351	30
 #define	BWN_DMA0_RX_FRAMEOFFSET_FW598	38
 

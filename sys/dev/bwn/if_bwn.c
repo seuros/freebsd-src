@@ -2485,7 +2485,7 @@ bwn_chip_init(struct bwn_mac *mac)
 		BWN_WRITE_4(mac, 0x018c, 0x02000000);
 	}
 	BWN_WRITE_4(mac, BWN_INTR_REASON, 0x00004000);
-	BWN_WRITE_4(mac, BWN_DMA0_INTR_MASK, 0x0001dc00);
+	BWN_WRITE_4(mac, BWN_DMA0_INTR_MASK, 0x0001fc00);
 	BWN_WRITE_4(mac, BWN_DMA1_INTR_MASK, 0x0000dc00);
 	BWN_WRITE_4(mac, BWN_DMA2_INTR_MASK, 0x0000dc00);
 	BWN_WRITE_4(mac, BWN_DMA3_INTR_MASK, 0x0001dc00);
@@ -3226,12 +3226,29 @@ bwn_dma_64_resume(struct bwn_dma_ring *dr)
 static int
 bwn_dma_64_get_curslot(struct bwn_dma_ring *dr)
 {
+	struct bwn_softc *sc = dr->dr_mac->mac_sc;
 	uint32_t val;
+	uint32_t raw, stat;
+	int slot;
 
-	val = BWN_DMA_READ(dr, BWN_DMA64_RXSTATUS);
-	val &= BWN_DMA64_RXSTATDPTR;
+	raw = BWN_DMA_READ(dr, BWN_DMA64_RXSTATUS);
+	stat = raw & BWN_DMA64_RXSTAT;
+	val = raw & BWN_DMA64_RXSTATDPTR;
+	slot = (val / sizeof(struct bwn_dmadesc64));
 
-	return (val / sizeof(struct bwn_dmadesc64));
+	/* TEMP DEBUG: print first few RXSTATUS reads for BCM4331/HT-PHY */
+	{
+		static int dbg_cnt;
+		if (dbg_cnt < 10 &&
+		    sc->sc_cid.chip_id == BHND_CHIPID_BCM4331) {
+			device_printf(sc->sc_dev,
+			    "bwn: DMA64 RXSTATUS raw=0x%08x stat=0x%08x dptr=0x%04x slot=%d\n",
+			    raw, stat, val, slot);
+			dbg_cnt++;
+		}
+	}
+
+	return (slot);
 }
 
 static void
@@ -3248,14 +3265,21 @@ bwn_dma_allocringmemory(struct bwn_dma_ring *dr)
 	struct bwn_mac *mac = dr->dr_mac;
 	struct bwn_dma *dma = &mac->mac_method.dma;
 	struct bwn_softc *sc = mac->mac_sc;
+	size_t ring_mem_size;
+	bus_size_t ring_align;
 	int error;
 
+	ring_mem_size = (dr->dr_type == BHND_DMA_ADDR_64BIT) ?
+	    BWN_DMA64_RINGMEMSIZE : BWN_DMA32_RINGMEMSIZE;
+	ring_align = (dr->dr_type == BHND_DMA_ADDR_64BIT) ?
+	    BWN_DMA64_RINGALIGN : BWN_DMA32_RINGALIGN;
+
 	error = bus_dma_tag_create(dma->parent_dtag,
-			    BWN_ALIGN, 0,
+			    ring_align, 0,
 			    BUS_SPACE_MAXADDR,
 			    BUS_SPACE_MAXADDR,
 			    NULL, NULL,
-			    BWN_DMA_RINGMEMSIZE,
+			    ring_mem_size,
 			    1,
 			    BUS_SPACE_MAXSIZE_32BIT,
 			    0,
@@ -3276,7 +3300,7 @@ bwn_dma_allocringmemory(struct bwn_dma_ring *dr)
 		return (-1);
 	}
 	error = bus_dmamap_load(dr->dr_ring_dtag, dr->dr_ring_dmap,
-	    dr->dr_ring_descbase, BWN_DMA_RINGMEMSIZE,
+	    dr->dr_ring_descbase, ring_mem_size,
 	    bwn_dma_ring_addr, &dr->dr_ring_dmabase, BUS_DMA_NOWAIT);
 	if (error) {
 		device_printf(sc->sc_dev,
@@ -3355,11 +3379,40 @@ bwn_dma_setup(struct bwn_dma_ring *dr)
 		BWN_DMA_WRITE(dr, BWN_DMA32_RXINDEX, dr->dr_numslots *
 		    sizeof(struct bwn_dmadesc32));
 	}
+
+	/* TEMP DEBUG: log RX ring setup for BCM4331/64-bit DMA */
+	{
+		static int rx_setup_dbg;
+		struct bwn_softc *sc = mac->mac_sc;
+		if (rx_setup_dbg < 4 &&
+		    (sc->sc_cid.chip_id == BHND_CHIPID_BCM4331 ||
+		    dr->dr_type == BHND_DMA_ADDR_64BIT)) {
+			device_printf(sc->sc_dev,
+			    "bwn: DMA RX setup idx=%d type=%s ring_dmabase=0x%llx bit12=%d frameoffset=%u rx_bufsize=%u rxctl=0x%08x addrext=0x%x addrlo=0x%08x addrhi=0x%08x\n",
+			    dr->dr_index,
+			    (dr->dr_type == BHND_DMA_ADDR_64BIT) ? "64" : "32",
+			    (unsigned long long)dr->dr_ring_dmabase,
+			    (dr->dr_ring_dmabase & 0x1000) ? 1 : 0,
+			    dr->dr_frameoffset,
+			    dr->dr_rx_bufsize,
+			    value, addrext, addrlo, addrhi);
+			if (dr->dr_type == BHND_DMA_ADDR_64BIT &&
+			    (dr->dr_ring_dmabase & 0x1000)) {
+				device_printf(sc->sc_dev,
+				    "bwn: WARNING DMA64 ring base has bit12 set; RXSTATUS DPTR may be corrupted\n");
+			}
+			rx_setup_dbg++;
+		}
+	}
 }
 
 static void
 bwn_dma_free_ringmemory(struct bwn_dma_ring *dr)
 {
+	size_t ring_mem_size;
+
+	ring_mem_size = (dr->dr_type == BHND_DMA_ADDR_64BIT) ?
+	    BWN_DMA64_RINGMEMSIZE : BWN_DMA32_RINGMEMSIZE;
 
 	bus_dmamap_unload(dr->dr_ring_dtag, dr->dr_ring_dmap);
 	bus_dmamem_free(dr->dr_ring_dtag, dr->dr_ring_descbase,
@@ -5084,7 +5137,7 @@ bwn_intr(void *arg)
 		return (FILTER_HANDLED);
 	DPRINTF(sc, BWN_DEBUG_INTR, "%s: reason=0x%08x\n", __func__, reason);
 
-	mac->mac_reason[0] = BWN_READ_4(mac, BWN_DMA0_REASON) & 0x0001dc00;
+	mac->mac_reason[0] = BWN_READ_4(mac, BWN_DMA0_REASON) & 0x0001fc00;
 	mac->mac_reason[1] = BWN_READ_4(mac, BWN_DMA1_REASON) & 0x0000dc00;
 	mac->mac_reason[2] = BWN_READ_4(mac, BWN_DMA2_REASON) & 0x0000dc00;
 	mac->mac_reason[3] = BWN_READ_4(mac, BWN_DMA3_REASON) & 0x0001dc00;
