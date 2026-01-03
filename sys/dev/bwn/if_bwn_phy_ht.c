@@ -241,6 +241,8 @@ uint16_t
 bwn_phy_ht_rf_read(struct bwn_mac *mac, uint16_t reg)
 {
 	/* Radio 2059 uses different access method */
+	/* HT-PHY requires 0x200 set for read access (per Linux b43). */
+	reg |= 0x200;
 	BWN_WRITE_2(mac, BWN_RFCTL, reg);
 	return BWN_READ_2(mac, BWN_RFDATALO);
 }
