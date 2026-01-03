@@ -2027,8 +2027,7 @@ bwn_set_channel(struct ieee80211com *ic)
 			bwn_rf_turnoff(mac);
 	}
 
-	if (phy->type != BWN_PHYTYPE_HT)
-		bwn_mac_enable(mac);
+	bwn_mac_enable(mac);
 
 fail:
 	BWN_UNLOCK(sc);
@@ -2340,6 +2339,18 @@ bwn_core_init(struct bwn_mac *mac)
 		bwn_pio_init(mac);
 	else
 		bwn_dma_init(mac);
+
+	/*
+	 * Enable DMA interrupts AFTER DMA rings are allocated.
+	 * Setting masks before rings exist can cause lost RX interrupts.
+	 */
+	BWN_WRITE_4(mac, BWN_DMA0_INTR_MASK, 0x0001fc00);
+	BWN_WRITE_4(mac, BWN_DMA1_INTR_MASK, 0x0000dc00);
+	BWN_WRITE_4(mac, BWN_DMA2_INTR_MASK, 0x0000dc00);
+	BWN_WRITE_4(mac, BWN_DMA3_INTR_MASK, 0x0001dc00);
+	BWN_WRITE_4(mac, BWN_DMA4_INTR_MASK, 0x0000dc00);
+	BWN_WRITE_4(mac, BWN_DMA5_INTR_MASK, 0x0000dc00);
+
 	bwn_wme_init(mac);
 	bwn_spu_setdelay(mac, 1);
 	bwn_bt_enable(mac);
@@ -2493,12 +2504,6 @@ bwn_chip_init(struct bwn_mac *mac)
 		BWN_WRITE_4(mac, 0x018c, 0x02000000);
 	}
 	BWN_WRITE_4(mac, BWN_INTR_REASON, 0x00004000);
-	BWN_WRITE_4(mac, BWN_DMA0_INTR_MASK, 0x0001fc00);
-	BWN_WRITE_4(mac, BWN_DMA1_INTR_MASK, 0x0000dc00);
-	BWN_WRITE_4(mac, BWN_DMA2_INTR_MASK, 0x0000dc00);
-	BWN_WRITE_4(mac, BWN_DMA3_INTR_MASK, 0x0001dc00);
-	BWN_WRITE_4(mac, BWN_DMA4_INTR_MASK, 0x0000dc00);
-	BWN_WRITE_4(mac, BWN_DMA5_INTR_MASK, 0x0000dc00);
 
 	bwn_mac_phy_clock_set(mac, true);
 
@@ -3040,7 +3045,7 @@ static void
 bwn_dma_ringfree(struct bwn_dma_ring **dr)
 {
 
-	if (dr == NULL)
+	if (dr == NULL || *dr == NULL)
 		return;
 
 	bwn_dma_free_descbufs(*dr);

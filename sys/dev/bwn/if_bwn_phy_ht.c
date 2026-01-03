@@ -683,6 +683,30 @@ bwn_phy_ht_classifier(struct bwn_mac *mac, uint16_t mask, uint16_t val)
 }
 
 /*
+ * Read clip detection state
+ * From Linux b43 phy_ht.c b43_phy_ht_read_clip_detection()
+ *
+ * Reads the AGC clip threshold registers for all 3 cores. The act of reading
+ * these registers initializes the AGC (automatic gain control) state machine.
+ * Without this step, RX frames are dropped at the baseband before reaching DMA,
+ * causing linknoise=0 and DPTR=0 despite RSSI being non-zero.
+ *
+ * This is a hardware quirk - the register reads have a side effect of
+ * calibrating the AGC thresholds. The values read are not used.
+ */
+static void
+bwn_phy_ht_read_clip_detection(struct bwn_mac *mac)
+{
+	uint16_t clip_state[3];
+
+	clip_state[0] = bwn_phy_ht_read(mac, BWN_PHY_HT_C1_CLIP1THRES);
+	clip_state[1] = bwn_phy_ht_read(mac, BWN_PHY_HT_C2_CLIP1THRES);
+	clip_state[2] = bwn_phy_ht_read(mac, BWN_PHY_HT_C3_CLIP1THRES);
+
+	/* Values are read but not used - the read itself calibrates AGC */
+}
+
+/*
  * TX power fix
  * From Linux b43 phy_ht.c b43_phy_ht_tx_power_fix()
  * Writes calibration values to gain tables.
@@ -932,6 +956,14 @@ bwn_phy_ht_init(struct bwn_mac *mac)
 
 	/* Classifier setup */
 	bwn_phy_ht_classifier(mac, 0, 0);
+
+	/*
+	 * CRITICAL: Read clip detection registers to initialize AGC.
+	 * This is a hardware quirk - reading these registers calibrates
+	 * the AGC thresholds. Without this, RX frames are dropped at
+	 * baseband before reaching DMA (linknoise=0, DPTR=0).
+	 */
+	bwn_phy_ht_read_clip_detection(mac);
 
 	/* B-PHY init for 2.4GHz */
 	bwn_phy_ht_bphy_init(mac);
