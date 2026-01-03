@@ -1986,6 +1986,7 @@ bwn_set_channel(struct ieee80211com *ic)
 	struct bwn_mac *mac = sc->sc_curmac;
 	struct bwn_phy *phy = &mac->mac_phy;
 	int chan, error;
+	int did_suspend = 0;
 
 	BWN_LOCK(sc);
 
@@ -1999,7 +2000,10 @@ bwn_set_channel(struct ieee80211com *ic)
 	 * Other PHYs need MAC suspended for safe channel switching.
 	 */
 	if (phy->type != BWN_PHYTYPE_HT)
+	{
 		bwn_mac_suspend(mac);
+		did_suspend = 1;
+	}
 	bwn_set_txretry(mac, BWN_RETRY_SHORT, BWN_RETRY_LONG);
 	chan = ieee80211_chan2ieee(ic, ic->ic_curchan);
 	if (chan != phy->chan)
@@ -2027,7 +2031,8 @@ bwn_set_channel(struct ieee80211com *ic)
 			bwn_rf_turnoff(mac);
 	}
 
-	bwn_mac_enable(mac);
+	if (did_suspend)
+		bwn_mac_enable(mac);
 
 fail:
 	BWN_UNLOCK(sc);
@@ -4090,9 +4095,18 @@ bwn_mac_enable(struct bwn_mac *mac)
 	    BWN_SHARED_UCODESTAT);
 	if (state != BWN_SHARED_UCODESTAT_SUSPEND &&
 	    state != BWN_SHARED_UCODESTAT_SLEEP) {
+		static int bad_state_cnt;
+
 		DPRINTF(sc, BWN_DEBUG_FW,
 		    "%s: warn: firmware state (%d)\n",
 		    __func__, state);
+		if (bad_state_cnt < 8) {
+			device_printf(sc->sc_dev,
+			    "bwn: mac_enable: ucodestat=%u macctl=0x%08x suspended=%d\n",
+			    state, BWN_READ_4(mac, BWN_MACCTL),
+			    mac->mac_suspended);
+			bad_state_cnt++;
+		}
 	}
 
 	mac->mac_suspended--;
@@ -4105,6 +4119,21 @@ bwn_mac_enable(struct bwn_mac *mac)
 		BWN_READ_4(mac, BWN_MACCTL);
 		BWN_READ_4(mac, BWN_INTR_REASON);
 		bwn_psctl(mac, 0);
+		if (sc->sc_cid.chip_id == BHND_CHIPID_BCM4331) {
+			static int mac_on_dbg;
+			if (mac_on_dbg < 8) {
+				uint16_t ucstat;
+				uint32_t macctl;
+
+				ucstat = bwn_shm_read_2(mac, BWN_SHARED,
+				    BWN_SHARED_UCODESTAT);
+				macctl = BWN_READ_4(mac, BWN_MACCTL);
+				device_printf(sc->sc_dev,
+				    "bwn: mac_enable: after ON ucodestat=%u macctl=0x%08x\n",
+				    ucstat, macctl);
+				mac_on_dbg++;
+			}
+		}
 	}
 }
 
@@ -4539,6 +4568,25 @@ bwn_fw_loaducode(struct bwn_mac *mac)
 		mac->mac_fw.fw_hdr_format = BWN_FW_HDR_410;
 	else
 		mac->mac_fw.fw_hdr_format = BWN_FW_HDR_351;
+
+	/* HT-PHY debug: confirm firmware header format vs RX frame offset */
+	if (sc->sc_cid.chip_id == BHND_CHIPID_BCM4331) {
+		uint16_t foff;
+
+		switch (mac->mac_fw.fw_hdr_format) {
+		case BWN_FW_HDR_598:
+			foff = BWN_DMA0_RX_FRAMEOFFSET_FW598;
+			break;
+		case BWN_FW_HDR_410:
+		case BWN_FW_HDR_351:
+		default:
+			foff = BWN_DMA0_RX_FRAMEOFFSET_FW351;
+			break;
+		}
+		device_printf(sc->sc_dev,
+		    "bwn: fwrev=%u hdr_format=%u rx_frameoffset=%u\n",
+		    mac->mac_fw.rev, mac->mac_fw.fw_hdr_format, foff);
+	}
 
 	/*
 	 * We don't support rev 598 or later; that requires
