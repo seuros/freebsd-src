@@ -126,6 +126,11 @@ TUNABLE_INT("hw.bwn.usedma", &bwn_usedma);
 static int	bwn_wme = 1;
 SYSCTL_INT(_hw_bwn, OID_AUTO, wme, CTLFLAG_RW, &bwn_wme, 0,
     "uses WME support");
+static int	bwn_force_fw_hdr_format = 0;
+SYSCTL_INT(_hw_bwn, OID_AUTO, force_fw_hdr_format, CTLFLAG_RWTUN,
+    &bwn_force_fw_hdr_format, 0,
+    "force firmware header format (0=auto, 351/410/598)");
+TUNABLE_INT("hw.bwn.force_fw_hdr_format", &bwn_force_fw_hdr_format);
 
 static void	bwn_attach_pre(struct bwn_softc *);
 static int	bwn_attach_post(struct bwn_softc *);
@@ -247,6 +252,7 @@ static void	bwn_dma_64_resume(struct bwn_dma_ring *);
 static int	bwn_dma_64_get_curslot(struct bwn_dma_ring *);
 static void	bwn_dma_64_set_curslot(struct bwn_dma_ring *, int);
 static int	bwn_dma_allocringmemory(struct bwn_dma_ring *);
+static void	bwn_dma_rx_config(struct bwn_dma_ring *);
 static void	bwn_dma_setup(struct bwn_dma_ring *);
 static void	bwn_dma_free_ringmemory(struct bwn_dma_ring *);
 static void	bwn_dma_cleanup(struct bwn_dma_ring *);
@@ -3330,6 +3336,46 @@ bwn_dma_allocringmemory(struct bwn_dma_ring *dr)
 }
 
 static void
+bwn_dma_rx_config(struct bwn_dma_ring *dr)
+{
+	struct bwn_mac *mac = dr->dr_mac;
+	struct bwn_dma *dma = &mac->mac_method.dma;
+	uint16_t rx_bufsize, frameoffset;
+	struct bwn_dmadesc_generic *desc;
+	struct bwn_dmadesc_meta *mt;
+	int i;
+
+	if (dr->dr_tx)
+		return;
+
+	switch (mac->mac_fw.fw_hdr_format) {
+	case BWN_FW_HDR_598:
+		rx_bufsize = BWN_DMA0_RX_BUFFERSIZE_FW598;
+		frameoffset = BWN_DMA0_RX_FRAMEOFFSET_FW598;
+		break;
+	case BWN_FW_HDR_410:
+	case BWN_FW_HDR_351:
+	default:
+		rx_bufsize = BWN_DMA0_RX_BUFFERSIZE_FW351;
+		frameoffset = BWN_DMA0_RX_FRAMEOFFSET_FW351;
+		break;
+	}
+
+	dr->dr_rx_bufsize = rx_bufsize;
+	dr->dr_frameoffset = frameoffset;
+
+	/* Reset poison/redzone after updating frameoffset. */
+	for (i = 0; i < dr->dr_numslots; i++) {
+		dr->getdesc(dr, i, &desc, &mt);
+		if (mt->mt_m == NULL)
+			continue;
+		bwn_dma_set_redzone(dr, mt->mt_m);
+		bus_dmamap_sync(dma->rxbuf_dtag, mt->mt_dmap,
+		    BUS_DMASYNC_PREWRITE);
+	}
+}
+
+static void
 bwn_dma_setup(struct bwn_dma_ring *dr)
 {
 	struct bwn_mac			*mac;
@@ -3374,6 +3420,7 @@ bwn_dma_setup(struct bwn_dma_ring *dr)
 	 * set for RX
 	 */
 	dr->dr_usedslot = dr->dr_numslots;
+	bwn_dma_rx_config(dr);
 
 	if (dr->dr_type == BHND_DMA_ADDR_64BIT) {
 		value = (dr->dr_frameoffset << BWN_DMA64_RXFROFF_SHIFT);
@@ -4568,6 +4615,29 @@ bwn_fw_loaducode(struct bwn_mac *mac)
 		mac->mac_fw.fw_hdr_format = BWN_FW_HDR_410;
 	else
 		mac->mac_fw.fw_hdr_format = BWN_FW_HDR_351;
+
+	/* Optional override to force firmware header format */
+	if (bwn_force_fw_hdr_format != 0) {
+		switch (bwn_force_fw_hdr_format) {
+		case 351:
+			mac->mac_fw.fw_hdr_format = BWN_FW_HDR_351;
+			break;
+		case 410:
+			mac->mac_fw.fw_hdr_format = BWN_FW_HDR_410;
+			break;
+		case 598:
+			mac->mac_fw.fw_hdr_format = BWN_FW_HDR_598;
+			break;
+		default:
+			device_printf(sc->sc_dev,
+			    "invalid hw.bwn.force_fw_hdr_format=%d (use 0, 351, 410, or 598)\n",
+			    bwn_force_fw_hdr_format);
+			break;
+		}
+		device_printf(sc->sc_dev,
+		    "bwn: forced fw hdr format=%u\n",
+		    mac->mac_fw.fw_hdr_format);
+	}
 
 	/* HT-PHY debug: confirm firmware header format vs RX frame offset */
 	if (sc->sc_cid.chip_id == BHND_CHIPID_BCM4331) {
