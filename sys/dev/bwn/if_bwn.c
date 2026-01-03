@@ -5,7 +5,7 @@
  * Copyright (c) 2016 Landon Fuller <landonf@FreeBSD.org>
  * Copyright (c) 2017 The FreeBSD Foundation
  * All rights reserved.
- * 
+ *
  * Portions of this software were developed by Landon Fuller
  * under sponsorship from the FreeBSD Foundation.
  *
@@ -1992,7 +1992,14 @@ bwn_set_channel(struct ieee80211com *ic)
 	error = bwn_switch_band(sc, ic->ic_curchan);
 	if (error)
 		goto fail;
-	bwn_mac_suspend(mac);
+	/*
+	 * HT-PHY: The firmware handles channel switching without MAC suspend.
+	 * Suspending the MAC during channel switch causes the microcode to
+	 * hang in ACTIVE state (UCODESTAT=2) and never respond to suspend.
+	 * Other PHYs need MAC suspended for safe channel switching.
+	 */
+	if (phy->type != BWN_PHYTYPE_HT)
+		bwn_mac_suspend(mac);
 	bwn_set_txretry(mac, BWN_RETRY_SHORT, BWN_RETRY_LONG);
 	chan = ieee80211_chan2ieee(ic, ic->ic_curchan);
 	if (chan != phy->chan)
@@ -2020,7 +2027,8 @@ bwn_set_channel(struct ieee80211com *ic)
 			bwn_rf_turnoff(mac);
 	}
 
-	bwn_mac_enable(mac);
+	if (phy->type != BWN_PHYTYPE_HT)
+		bwn_mac_enable(mac);
 
 fail:
 	BWN_UNLOCK(sc);
@@ -3409,10 +3417,6 @@ bwn_dma_setup(struct bwn_dma_ring *dr)
 static void
 bwn_dma_free_ringmemory(struct bwn_dma_ring *dr)
 {
-	size_t ring_mem_size;
-
-	ring_mem_size = (dr->dr_type == BHND_DMA_ADDR_64BIT) ?
-	    BWN_DMA64_RINGMEMSIZE : BWN_DMA32_RINGMEMSIZE;
 
 	bus_dmamap_unload(dr->dr_ring_dtag, dr->dr_ring_dmap);
 	bus_dmamem_free(dr->dr_ring_dtag, dr->dr_ring_descbase,
@@ -3727,7 +3731,7 @@ bwn_fw_fillinfo(struct bwn_mac *mac)
 /**
  * Request that the GPIO controller tristate all pins set in @p mask, granting
  * the MAC core control over the pins.
- * 
+ *
  * @param mac	bwn MAC state.
  * @param pins	If the bit position for a pin number is set to one, tristate the
  *		pin.
@@ -4052,6 +4056,17 @@ bwn_mac_suspend(struct bwn_mac *mac)
 			DELAY(1000);
 		}
 		device_printf(sc->sc_dev, "MAC suspend failed\n");
+		/* Debug: show microcode state when suspend fails */
+		{
+			uint16_t ucstat;
+			uint32_t macctl;
+			ucstat = bwn_shm_read_2(mac, BWN_SHARED,
+			    BWN_SHARED_UCODESTAT);
+			macctl = BWN_READ_4(mac, BWN_MACCTL);
+			device_printf(sc->sc_dev,
+			    "  UCODESTAT=%d (3=SUSPEND,4=SLEEP) MACCTL=0x%08x\n",
+			    ucstat, macctl);
+		}
 	}
 out:
 	mac->mac_suspended++;
